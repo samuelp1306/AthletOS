@@ -1,0 +1,80 @@
+# Performance OS — Personal Configuration
+# All thresholds and targets are starting values. Calibrate after 4+ weeks of data.
+
+# --- Athlete Profile ---
+athlete:
+  name: "Samuel"
+  weight_kg: 66
+  height_cm: 173
+  position: "LB / LM"  # left back / left midfielder
+  age: 17
+
+# --- Nutrition Targets ---
+nutrition:
+  tdee: 2500                    # Total Daily Energy Expenditure (kcal)
+  protein_target_per_kg: 1.6    # g/kg bodyweight → 106g daily
+  carb_target_pre_training: 3.0 # g/kg on day before intense session → 198g
+  deficit_threshold: 300        # kcal below TDEE to flag deficit
+
+# --- Readiness Corrections ---
+# These are applied to the Whoop Recovery Score (0-100)
+readiness:
+  correction_deficit: -15       # When deficit detected AND whoop > 80
+  correction_checkin_no: -20    # When check-in "no" AND whoop > 70
+  correction_checkin_limited: -10  # When check-in "limited" AND whoop > 80
+  correction_sleep_bonus: 5     # When sleep_efficiency > 90% AND hours > 7.5
+  correction_sleep_malus: -8    # When sleep_efficiency < 75% OR hours < 6
+  sleep_efficiency_good: 90     # % threshold for bonus
+  sleep_efficiency_bad: 75      # % threshold for malus
+  sleep_hours_good: 7.5
+  sleep_hours_bad: 6.0
+
+# --- ACWR Thresholds ---
+acwr:
+  acute_window: 7               # days
+  chronic_window: 28            # days
+  spike_threshold: 1.3          # above = injury risk zone
+  detraining_threshold: 0.8     # below = insufficient stimulus
+  optimal_range: [0.8, 1.3]
+
+# --- Banister Model ---
+banister:
+  fitness_decay: 42             # days (tau_1)
+  fatigue_decay: 7              # days (tau_2)
+  k1: 1.0                       # fitness gain factor (calibrate)
+  k2: 2.0                       # fatigue gain factor (calibrate)
+
+# --- Discrepancy Detection ---
+discrepancy:
+  threshold: 20                  # points difference to flag
+  checkin_mapping:
+    yes: 90
+    limited: 60
+    no: 30
+
+# --- Training Load ---
+training:
+  session_types:
+    - gym
+    - speed
+    - plyo
+    - match
+    - conditioning
+    - recovery
+    - technical
+  load_formula: "strain + (rpe * duration_min / 60)"
+  # strain from Whoop, RPE and duration from training_log
+
+# --- Claude API (Layer 2) ---
+coach:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 500
+  daily_prompt: "coach/prompts/daily_report.md"
+  weekly_prompt: "coach/prompts/weekly_summary.md"
+
+# --- Paths ---
+paths:
+  database: "db/performance.db"
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  outputs: "outputs"
