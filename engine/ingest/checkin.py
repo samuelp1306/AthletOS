@@ -122,20 +122,75 @@ def ingest(config: dict | None = None) -> int:
     return upsert(rows, db_path)
 
 
-if __name__ == "__main__":
-    cfg = load_config()
+def _prompt_choice(question: str, choices: set[str]) -> str:
+    """Fragt bis eine valide Antwort kommt. Case-insensitive, Whitespace-tolerant."""
+    pretty = "/".join(sorted(choices))
+    while True:
+        try:
+            ans = input(f"{question} ({pretty}): ").strip().lower()
+        except EOFError:
+            raise SystemExit("\nAbgebrochen.")
+        if ans in choices:
+            return ans
+        print(f"  ungueltig: '{ans}' -- bitte eines von {pretty}")
+
+
+def run_interactive(config: dict | None = None) -> dict:
+    """Interaktives Check-in fuer HEUTE. Schreibt in daily_checkin.
+
+    Returns:
+        {"date": str, "readiness": str, "reason": str | None}
+    """
+    from datetime import date as date_cls
+
+    cfg = config or load_config()
     db_path = PROJECT_ROOT / cfg["paths"]["database"]
+    today = date_cls.today().isoformat()
 
-    n = ingest(cfg)
-    print(f"Eingespielt: {n} Check-ins -> {db_path}")
+    readiness = _prompt_choice("Wie fuehlst du dich heute?", VALID_READINESS)
+    if readiness == "yes":
+        # Kein Grund noetig -- speichern als 'none' fuer konsistente Auswertung.
+        reason: str | None = "none"
+    else:
+        # 'none' bei limited/no waere widerspruechlich -> nicht anbieten.
+        reason = _prompt_choice("Grund?", VALID_REASONS - {"none"})
 
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        # Tabelle anlegen, falls noch nie ein Import lief (sonst wirft das SELECT).
-        conn.execute(CREATE_TABLE_SQL)
-        cur = conn.execute("SELECT * FROM daily_checkin ORDER BY date DESC LIMIT 3")
-        rows = cur.fetchall()
+    upsert([(today, readiness, reason)], db_path)
 
-    print("\nLetzte 3 Zeilen aus daily_checkin:")
-    for r in rows:
-        print(dict(r))
+    if reason and reason != "none":
+        print(f"Checkin gespeichert: {today} -- {readiness} ({reason})")
+    else:
+        print(f"Checkin gespeichert: {today} -- {readiness}")
+
+    return {"date": today, "readiness": readiness, "reason": reason}
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Daily Check-in")
+    parser.add_argument(
+        "--from-json",
+        action="store_true",
+        help="Statt interaktiv: data/raw/checkin.json einlesen",
+    )
+    args = parser.parse_args()
+
+    if args.from_json:
+        cfg = load_config()
+        db_path = PROJECT_ROOT / cfg["paths"]["database"]
+        n = ingest(cfg)
+        print(f"Eingespielt: {n} Check-ins -> {db_path}")
+
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(CREATE_TABLE_SQL)
+            cur = conn.execute(
+                "SELECT * FROM daily_checkin ORDER BY date DESC LIMIT 3"
+            )
+            rows = cur.fetchall()
+        print("\nLetzte 3 Zeilen aus daily_checkin:")
+        for r in rows:
+            print(dict(r))
+    else:
+        run_interactive()
