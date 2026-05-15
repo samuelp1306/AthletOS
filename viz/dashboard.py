@@ -49,6 +49,52 @@ RECO_LABELS: dict[str, str] = {
     "rest": "REST",
 }
 
+# Ampel-Farben fuer die Metrik-Karten
+TRAFFIC = {
+    "green": "#3fbf6a",
+    "yellow": "#e6c34f",
+    "red": "#e64f4f",
+    "muted": "#6a7280",
+}
+
+
+def _traffic_readiness(score: int) -> str:
+    if score >= 75:
+        return TRAFFIC["green"]
+    if score >= 50:
+        return TRAFFIC["yellow"]
+    return TRAFFIC["red"]
+
+
+def _traffic_acwr_zone(zone: str | None) -> str:
+    return {
+        "optimal": TRAFFIC["green"],
+        "spike": TRAFFIC["red"],
+        "detraining": TRAFFIC["yellow"],
+    }.get(zone or "", TRAFFIC["muted"])
+
+
+def _traffic_hrv(delta_pct: float | None) -> str:
+    if delta_pct is None:
+        return TRAFFIC["muted"]
+    if delta_pct >= -5:
+        return TRAFFIC["green"]
+    if delta_pct >= -10:
+        return TRAFFIC["yellow"]
+    return TRAFFIC["red"]
+
+
+def _traffic_sleep(hours: float | None, eff: float | None) -> str:
+    if hours is None or eff is None:
+        return TRAFFIC["muted"]
+    # Voller Bonus: laenger UND effizient
+    if hours >= 7.5 and eff >= 90:
+        return TRAFFIC["green"]
+    # Roter Bereich: sehr kurz ODER sehr ineffizient
+    if hours < 6 or eff < 75:
+        return TRAFFIC["red"]
+    return TRAFFIC["yellow"]
+
 
 # ============================================================
 # CACHED LOADERS
@@ -213,6 +259,7 @@ def _badge(text: str, bg: str, fg: str = "#fff") -> str:
 
 
 def render_protocol_banner(protocol) -> None:
+    """Banner + Gruende. Flags wandern in render_flags_section() unten."""
     bg, accent = RECO_COLORS.get(protocol.training_recommendation, ("#444", "#888"))
     label = RECO_LABELS.get(protocol.training_recommendation, protocol.training_recommendation.upper())
 
@@ -242,15 +289,49 @@ def render_protocol_banner(protocol) -> None:
         for r in protocol.recommendation_reasons:
             st.markdown(f"- {r}")
 
-    badges_html = ""
-    for flag in protocol.flags:
-        badges_html += _badge(flag, bg="#7a1f1f")
-    for flag in protocol.nutrition_flags:
-        badges_html += _badge(flag, bg="#8a4a1f")
-    for flag in protocol.bloodwork_flags:
-        badges_html += _badge(flag, bg="#4a1f7a")
-    if badges_html:
-        st.markdown(f'<div style="margin-top:0.6rem;">{badges_html}</div>', unsafe_allow_html=True)
+
+def render_flags_section(protocol) -> None:
+    """Eigenstaendige Sektion: jeder Flag als auffaellige Zeile.
+
+    Drei Kategorien mit eigener Akzentfarbe:
+        flags             -> rot     (Recovery/Training-Warnungen)
+        nutrition_flags   -> orange  (Ernaehrungs-Hinweise)
+        bloodwork_flags   -> violett (Blutwerte)
+
+    Section wird nur gerendert, wenn mindestens ein Flag existiert.
+    """
+    flags = list(protocol.flags or [])
+    nut = list(protocol.nutrition_flags or [])
+    blood = list(protocol.bloodwork_flags or [])
+    total = len(flags) + len(nut) + len(blood)
+    if total == 0:
+        return
+
+    st.markdown(f"### Aktive Flags ({total})")
+
+    def _row(text: str, accent: str, bg: str) -> str:
+        return (
+            f'<div style="'
+            f'background:{bg};'
+            f'border-left:4px solid {accent};'
+            f'border-radius:6px;'
+            f'padding:0.6rem 0.9rem;'
+            f'margin:0.3rem 0;'
+            f'color:#f0f0f0;'
+            f'font-size:0.92rem;'
+            f'line-height:1.4;'
+            f'">{text}</div>'
+        )
+
+    html_parts: list[str] = []
+    for f in flags:
+        html_parts.append(_row(f, accent="#e64f4f", bg="#3a1f1f"))
+    for f in nut:
+        html_parts.append(_row(f, accent="#e89348", bg="#3a2a1f"))
+    for f in blood:
+        html_parts.append(_row(f, accent="#a070d0", bg="#2a1f3a"))
+
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
 
 
 def render_discrepancy_card(whoop: int, adjusted: int) -> None:
@@ -293,71 +374,113 @@ def render_discrepancy_card(whoop: int, adjusted: int) -> None:
 def render_readiness_row(layer1: dict, whoop_row: dict, hrv_baseline: float) -> None:
     col1, col2, col3, col4 = st.columns(4)
 
-    # Adjusted Readiness
+    # --- Adjusted Readiness (Ampel: >=75 gruen, 50-74 gelb, <50 rot) ---
     adj = int(layer1["adjusted_readiness"])
     corrs = layer1.get("corrections_applied") or []
     corr_text = ", ".join(corrs) if corrs else "keine Korrekturen"
     with col1:
-        st.markdown(_card("ADJUSTED READINESS", f"{adj}", sub=corr_text), unsafe_allow_html=True)
+        st.markdown(
+            _card("ADJUSTED READINESS", f"{adj}", sub=corr_text, accent=_traffic_readiness(adj)),
+            unsafe_allow_html=True,
+        )
 
-    # ACWR
+    # --- ACWR (Farbe = Zone) ---
     acwr_val = layer1.get("acwr")
-    zone = layer1.get("acwr_zone") or "n/a"
-    zone_color = {"optimal": "#3fbf6a", "spike": "#e64f4f", "detraining": "#e6c34f"}.get(zone, "#888")
+    zone = layer1.get("acwr_zone")
     acwr_text = f"{acwr_val:.2f}" if acwr_val is not None else "—"
     with col2:
-        st.markdown(_card("ACWR", acwr_text, sub=f"Zone: {zone}", accent=zone_color), unsafe_allow_html=True)
+        st.markdown(
+            _card("ACWR", acwr_text, sub=f"Zone: {zone or 'n/a'}", accent=_traffic_acwr_zone(zone)),
+            unsafe_allow_html=True,
+        )
 
-    # HRV vs Baseline
+    # --- HRV vs Baseline (>= -5% gruen, -5..-10 gelb, < -10 rot) ---
     hrv = whoop_row.get("hrv")
     if hrv is not None and hrv_baseline:
         delta_pct = ((hrv - hrv_baseline) / hrv_baseline) * 100
         hrv_text = f"{hrv:.0f} ms"
         hrv_sub = f"Baseline {hrv_baseline:.0f} ms · {delta_pct:+.1f}%"
-        hrv_accent = "#3fbf6a" if delta_pct >= -10 else "#e64f4f"
+        hrv_accent = _traffic_hrv(delta_pct)
     else:
-        hrv_text, hrv_sub, hrv_accent = "—", "keine Daten", "#888"
+        hrv_text, hrv_sub, hrv_accent = "—", "keine Daten", TRAFFIC["muted"]
     with col3:
         st.markdown(_card("HRV", hrv_text, sub=hrv_sub, accent=hrv_accent), unsafe_allow_html=True)
 
-    # Sleep
+    # --- Sleep (>=7.5h & >=90% eff = gruen, <6h ODER <75% eff = rot, sonst gelb) ---
     h = whoop_row.get("sleep_hours")
     e = whoop_row.get("sleep_efficiency")
     if h is not None and e is not None:
         sleep_text = f"{h:.1f} h"
         sleep_sub = f"Effizienz {e:.0f}%"
-        sleep_accent = "#3fbf6a" if (h >= 7.5 and e >= 90) else ("#e64f4f" if (h < 6 or e < 75) else "#3b82f6")
+        sleep_accent = _traffic_sleep(h, e)
     else:
-        sleep_text, sleep_sub, sleep_accent = "—", "keine Daten", "#888"
+        sleep_text, sleep_sub, sleep_accent = "—", "keine Daten", TRAFFIC["muted"]
     with col4:
         st.markdown(_card("SLEEP", sleep_text, sub=sleep_sub, accent=sleep_accent), unsafe_allow_html=True)
 
 
 def render_acwr_chart(acwr_df: pd.DataFrame, cfg: dict) -> None:
+    """ACWR-Verlauf mit 4 abgestuften Zonen-Bands.
+
+    Zonen:
+        gruen   detraining_threshold .. spike_threshold    (optimal, dominant)
+        gelb    0 .. detraining_threshold                  (detraining)
+        orange  spike_threshold .. danger_threshold        (caution 1.3-1.5)
+        rot     danger_threshold .. oben                   (danger >1.5)
+    """
     import matplotlib.pyplot as plt
 
-    spike = float(cfg["acwr"]["spike_threshold"])
-    detraining = float(cfg["acwr"]["detraining_threshold"])
+    spike = float(cfg["acwr"]["spike_threshold"])           # 1.3
+    detraining = float(cfg["acwr"]["detraining_threshold"]) # 0.8
+    danger = 1.5  # zweite Stufe aus protocol.py — bewusst hardgecoded weil
+                  # die Schwelle dort fix ist (siehe protocol.select_training_recommendation)
 
     fig, ax = plt.subplots(figsize=(11, 4))
     fig.patch.set_facecolor("#1a1f2e")
     ax.set_facecolor("#1a1f2e")
 
     y_min = min(0.5, float(acwr_df["acwr"].min(skipna=True) or 0.5) - 0.1)
-    y_max = max(1.6, float(acwr_df["acwr"].max(skipna=True) or 1.6) + 0.1)
+    y_max = max(1.7, float(acwr_df["acwr"].max(skipna=True) or 1.7) + 0.1)
 
-    ax.axhspan(detraining, spike, color="#3fbf6a", alpha=0.18)
-    ax.axhspan(y_min, detraining, color="#e6c34f", alpha=0.18)
-    ax.axhspan(spike, y_max, color="#e64f4f", alpha=0.18)
-    ax.plot(acwr_df["date"], acwr_df["acwr"], marker="o", color="#e6e6e6", linewidth=1.6, markersize=4)
-    ax.axhline(1.0, color="#888", linestyle=":", linewidth=0.8)
+    # Reihenfolge: erst Bands, dann Linie drueber.
+    # Alphas absichtlich asymmetrisch: gruen am dominantesten, rot am signal-staerksten.
+    ax.axhspan(detraining, spike, color="#3fbf6a", alpha=0.32, label="optimal")
+    ax.axhspan(y_min, detraining, color="#e6c34f", alpha=0.18, label="detraining")
+    ax.axhspan(spike, min(danger, y_max), color="#e89348", alpha=0.22, label="caution")
+    if y_max > danger:
+        ax.axhspan(danger, y_max, color="#e64f4f", alpha=0.32, label="danger >1.5")
+
+    # Trennlinien fuer die Schwellen, damit die Grenzen klar erkennbar bleiben
+    for thr in (detraining, spike, danger):
+        if y_min <= thr <= y_max:
+            ax.axhline(thr, color="#3a3f4e", linestyle="-", linewidth=0.5, alpha=0.8)
+
+    ax.plot(
+        acwr_df["date"],
+        acwr_df["acwr"],
+        marker="o",
+        color="#f0f0f0",
+        linewidth=1.8,
+        markersize=4.5,
+        markeredgecolor="#1a1f2e",
+        markeredgewidth=0.8,
+    )
+    ax.axhline(1.0, color="#9aa3b1", linestyle=":", linewidth=0.7, alpha=0.5)
 
     ax.set_ylim(y_min, y_max)
     ax.set_title("ACWR — letzte 30 Tage", color="#e6e6e6")
     ax.tick_params(colors="#9aa3b1")
     for spine in ax.spines.values():
         spine.set_color("#2a2f3e")
-    ax.grid(True, alpha=0.15, color="#9aa3b1")
+    ax.grid(True, alpha=0.1, color="#9aa3b1")
+    ax.legend(
+        loc="upper left",
+        facecolor="#1a1f2e",
+        edgecolor="#2a2f3e",
+        labelcolor="#e6e6e6",
+        fontsize=8,
+        ncol=4,
+    )
     fig.autofmt_xdate()
     fig.tight_layout()
     st.pyplot(fig)
@@ -478,6 +601,10 @@ def main() -> None:
     render_readiness_row(layer1, whoop_row, hrv_baseline)
 
     st.markdown("&nbsp;", unsafe_allow_html=True)  # Abstand
+
+    # --- 4b. FLAGS-SEKTION (nur wenn vorhanden) ---
+    if protocol is not None:
+        render_flags_section(protocol)
 
     # --- 5. CHARTS ---
     acwr_all = load_acwr_series()
