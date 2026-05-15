@@ -72,7 +72,7 @@ training:
 
 # --- Claude API (Layer 2) ---
 coach:
-  model: "claude-sonnet-4-20250514"
+  model: "claude-sonnet-4-5"
   max_tokens: 500
   daily_prompt: "coach/prompts/daily_report.md"
   weekly_prompt: "coach/prompts/weekly_summary.md"
