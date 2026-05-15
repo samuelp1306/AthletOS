@@ -72,6 +72,14 @@ coach:
   daily_prompt: "coach/prompts/daily_report.md"
   weekly_prompt: "coach/prompts/weekly_summary.md"
 
+# --- Ingest / Data Quality ---
+ingest:
+  whoop:
+    # Zyklen mit Schlafdauer unter dieser Schwelle (Minuten) werden verworfen.
+    # Sie kommen aus Nap-Only-Tagen (Strap-Ladegap o. ae.) und haben keinen
+    # validen Nachtschlaf -- auch HRV/Recovery in diesen Zeilen sind unbrauchbar.
+    min_sleep_minutes: 180
+
 # --- Paths ---
 paths:
   database: "db/performance.db"
