@@ -46,17 +46,23 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
-    cfg = load_config()
+    print(f"Running Daily Report for {args.date}...", flush=True)
+
+    try:
+        cfg = load_config()
+    except Exception as e:
+        print(f"Config konnte nicht geladen werden: {type(e).__name__}: {e}")
+        return 3
 
     # --- Layer 1 ---
     try:
         layer1 = calculate(args.date, cfg)
-    except ValueError as e:
-        print(f"Layer 1 abgebrochen: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"Layer 1 abgebrochen: {type(e).__name__}: {e}")
         print(
             "  -> Vermutlich fehlt der Whoop-Eintrag fuer den Tag. "
-            "Erst 'python -m engine.ingest.whoop' laufen lassen.",
-            file=sys.stderr,
+            "Erst 'python -m engine.ingest.whoop' laufen lassen, "
+            "oder mit --date ein vorhandenes Datum angeben."
         )
         return 1
 
@@ -71,16 +77,30 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # --- Layer 2 ---
+    print("Calling Claude API...", flush=True)
     try:
         report = generate_daily_report(layer1, cfg)
-    except RuntimeError as e:
-        print(f"Layer 2 abgebrochen: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"Layer 2 abgebrochen: {type(e).__name__}: {e}")
         return 2
+    print("Done.", flush=True)
 
+    print()
     print(f"=== Daily Report {args.date} ===")
     print(report)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        rc = main()
+    except SystemExit:
+        # argparse beendet mit SystemExit -- durchreichen
+        raise
+    except Exception as e:
+        # Catch-all, damit nichts stumm stirbt
+        print(f"Unerwarteter Fehler: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        rc = 99
+    raise SystemExit(rc)
