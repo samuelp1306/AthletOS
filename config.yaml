@@ -28,6 +28,11 @@ readiness:
   sleep_efficiency_bad: 75      # % threshold for malus
   sleep_hours_good: 7.5
   sleep_hours_bad: 6.0
+  # Recovery-Gates: Korrektur greift nur wenn recovery_score ueber diesem Wert
+  # liegt. Verhindert doppelte Bestrafung bei ohnehin schlechtem Whoop-Score.
+  gate_recovery_deficit: 80
+  gate_recovery_checkin_no: 70
+  gate_recovery_checkin_limited: 80
 
 # --- ACWR Thresholds ---
 acwr:
