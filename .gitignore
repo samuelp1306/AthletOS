@@ -1,0 +1,29 @@
+# Personal data — Whoop/Yazio exports, check-ins, training logs
+data/raw/
+data/processed/
+
+# Generated SQLite database
+db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+
+# Generated reports & charts
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
