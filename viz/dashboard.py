@@ -1017,6 +1017,143 @@ def render_technical_section(date_str: str, cfg: dict) -> None:
 
 
 # ============================================================
+# SIDEBAR CHECK-IN FORM
+# ============================================================
+
+# Reihenfolge der Optionen entspricht der Anzeige im Form -> Indexierung
+# verlaesslich fuer Pre-Fill aus dem DB-Zustand.
+CHECKIN_READINESS_OPTIONS = ["Ja", "Eingeschraenkt", "Nein"]
+CHECKIN_READINESS_MAP = {"Ja": "yes", "Eingeschraenkt": "limited", "Nein": "no"}
+CHECKIN_READINESS_REVERSE = {v: k for k, v in CHECKIN_READINESS_MAP.items()}
+
+CHECKIN_REASON_OPTIONS = [
+    "Keine Einschraenkung",
+    "Soreness",
+    "Muedigkeit",
+    "Mental/Stress",
+    "Kaloriendefizit",
+    "Schlecht geschlafen",
+]
+CHECKIN_REASON_MAP = {
+    "Keine Einschraenkung": "none",
+    "Soreness": "soreness",
+    "Muedigkeit": "fatigue",
+    "Mental/Stress": "mental",
+    "Kaloriendefizit": "deficit",
+    "Schlecht geschlafen": "sleep",
+}
+CHECKIN_REASON_REVERSE = {v: k for k, v in CHECKIN_REASON_MAP.items()}
+
+
+def _load_checkin_for_date(date_str: str) -> dict | None:
+    """Existierende daily_checkin-Zeile fuer date_str, oder None.
+
+    Sorgt nebenbei dafuer, dass die Tabelle existiert und die rpe-Spalte
+    angelegt ist (additive Migration).
+    """
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        # Tabelle anlegen + rpe-Spalte ggf. ergaenzen (idempotent)
+        try:
+            from engine.ingest import checkin as checkin_ingest
+            checkin_ingest.migrate_add_rpe_column(conn)
+        except Exception:
+            # Fallback: minimaler CREATE -- ohne rpe-Migration weiterlaufen
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS daily_checkin ("
+                "date TEXT PRIMARY KEY, readiness TEXT NOT NULL, "
+                "reason TEXT, rpe REAL)"
+            )
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("SELECT * FROM daily_checkin WHERE date = ?", (date_str,))
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def _save_checkin(date_str: str, readiness: str, reason: str | None, rpe: float) -> None:
+    """INSERT OR REPLACE -- ueberschreibt bestehenden Eintrag fuer date_str."""
+    db_path = get_db_path()
+    with sqlite3.connect(db_path) as conn:
+        try:
+            from engine.ingest import checkin as checkin_ingest
+            checkin_ingest.migrate_add_rpe_column(conn)
+        except Exception:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS daily_checkin ("
+                "date TEXT PRIMARY KEY, readiness TEXT NOT NULL, "
+                "reason TEXT, rpe REAL)"
+            )
+        conn.execute(
+            "INSERT OR REPLACE INTO daily_checkin (date, readiness, reason, rpe) "
+            "VALUES (?, ?, ?, ?)",
+            (date_str, readiness, reason, float(rpe)),
+        )
+        conn.commit()
+
+
+def render_checkin_form(date_str: str) -> None:
+    """Sidebar-Formular fuer das gewaehlte Datum.
+
+    Pre-Fill aus einem bestehenden daily_checkin-Eintrag, sonst Defaults
+    (RPE 5, readiness=Ja, reason=Keine Einschraenkung).
+    """
+    existing = _load_checkin_for_date(date_str)
+
+    if existing:
+        rpe_default = int(existing["rpe"]) if existing.get("rpe") is not None else 5
+        rpe_default = max(1, min(10, rpe_default))
+        readiness_db = existing.get("readiness") or "yes"
+        readiness_label = CHECKIN_READINESS_REVERSE.get(readiness_db, "Ja")
+        readiness_idx = (
+            CHECKIN_READINESS_OPTIONS.index(readiness_label)
+            if readiness_label in CHECKIN_READINESS_OPTIONS else 0
+        )
+        reason_db = existing.get("reason") or "none"
+        reason_label = CHECKIN_REASON_REVERSE.get(reason_db, "Keine Einschraenkung")
+        reason_idx = (
+            CHECKIN_REASON_OPTIONS.index(reason_label)
+            if reason_label in CHECKIN_REASON_OPTIONS else 0
+        )
+    else:
+        rpe_default = 5
+        readiness_idx = 0
+        reason_idx = 0
+
+    st.markdown("#### Check-in")
+    if existing:
+        st.caption(f"Eintrag fuer {date_str} bereits gespeichert -- ueberschreibbar.")
+    else:
+        st.caption(f"Kein Eintrag fuer {date_str} -- neuer Check-in.")
+
+    # Widget-Keys an das Datum binden, damit Streamlit beim Datumswechsel
+    # die Defaults wirklich uebernimmt (kein Carry-over zwischen Tagen).
+    rpe = st.slider("RPE", 1, 10, value=rpe_default, key=f"checkin_rpe_{date_str}")
+    readiness_choice = st.radio(
+        "Vollgas heute?",
+        CHECKIN_READINESS_OPTIONS,
+        index=readiness_idx,
+        horizontal=True,
+        key=f"checkin_readiness_{date_str}",
+    )
+    reason_choice = st.selectbox(
+        "Grund",
+        CHECKIN_REASON_OPTIONS,
+        index=reason_idx,
+        key=f"checkin_reason_{date_str}",
+    )
+
+    if st.button("Check-in speichern", key=f"checkin_save_{date_str}", type="primary"):
+        readiness_db = CHECKIN_READINESS_MAP[readiness_choice]
+        reason_db = CHECKIN_REASON_MAP[reason_choice]
+        try:
+            _save_checkin(date_str, readiness_db, reason_db, rpe)
+            st.success("Check-in gespeichert")
+        except Exception as e:
+            st.error(f"Konnte nicht speichern: {type(e).__name__}: {e}")
+
+
+# ============================================================
 # MAIN APP
 # ============================================================
 
@@ -1049,6 +1186,9 @@ def main() -> None:
             max_value=max_d,
         )
         date_str = picked.isoformat() if hasattr(picked, "isoformat") else str(picked)
+
+        st.divider()
+        render_checkin_form(date_str)
 
         st.divider()
         st.caption(f"Verfuegbar: {dates[0]} → {dates[-1]} ({len(dates)} Tage)")

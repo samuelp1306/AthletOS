@@ -33,15 +33,26 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 VALID_READINESS = {"yes", "limited", "no"}
-VALID_REASONS = {"soreness", "fatigue", "mental", "deficit", "none"}
+VALID_REASONS = {"soreness", "fatigue", "mental", "deficit", "sleep", "none"}
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS daily_checkin (
     date TEXT PRIMARY KEY,
     readiness TEXT NOT NULL,
-    reason TEXT
+    reason TEXT,
+    rpe REAL
 )
 """
+
+
+def migrate_add_rpe_column(conn: sqlite3.Connection) -> None:
+    """Additive Migration: rpe-Spalte ergaenzen, falls die Tabelle aus einer
+    aelteren Version noch ohne sie existiert. Idempotent."""
+    conn.execute(CREATE_TABLE_SQL)  # CREATE IF NOT EXISTS deckt frische DBs ab
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(daily_checkin)")}
+    if "rpe" not in cols:
+        conn.execute("ALTER TABLE daily_checkin ADD COLUMN rpe REAL")
+        conn.commit()
 
 
 def load_config(path: Path = CONFIG_PATH) -> dict:
