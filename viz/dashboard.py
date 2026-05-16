@@ -447,6 +447,125 @@ def render_readiness_row(layer1: dict, whoop_row: dict, hrv_baseline: float) -> 
         st.markdown(_card("SLEEP", sleep_text, sub=sleep_sub, accent=sleep_accent), unsafe_allow_html=True)
 
 
+def _traffic_calories(deficit_kcal: float | None) -> str:
+    """Farbe fuer Kalorien-Karte. Deficit positiv = unter TDEE.
+
+    >400 rot, 200..400 gelb, <200 (inkl. Surplus) gruen.
+    """
+    if deficit_kcal is None:
+        return TRAFFIC["muted"]
+    if deficit_kcal > 400:
+        return TRAFFIC["red"]
+    if deficit_kcal >= 200:
+        return TRAFFIC["yellow"]
+    return TRAFFIC["green"]
+
+
+def render_nutrition_row(date_str: str, cfg: dict) -> None:
+    """4 Karten: Kalorien, Protein, Carbs, Deficit-Status.
+
+    Liest yazio_daily fuer date_str. Fehlt die Zeile -> dezente Hinweiszeile.
+    Schwellen fuer das Kalorien-Banner: >400 rot, 200..400 gelb, <200 gruen.
+    Status 'DEFICIT' bindet an config.nutrition.deficit_threshold (300),
+    damit das Banner mit dem Engine-Wert deficit_detected konsistent ist.
+    """
+    with sqlite3.connect(get_db_path()) as conn:
+        yazio = _fetch_one(conn, "yazio_daily", date_str)
+
+    if not yazio:
+        st.markdown(
+            '<div style="background:#1a1f2e;border-left:4px solid #6a7280;'
+            'border-radius:6px;padding:0.55rem 0.85rem;margin:0.3rem 0;'
+            'color:#9aa3b1;font-size:0.9rem;">'
+            'Keine Ernaehrungsdaten fuer diesen Tag</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # Config-Werte
+    weight_kg = float(cfg["athlete"]["weight_kg"])
+    tdee = float(cfg["nutrition"]["tdee"])
+    protein_target_g = float(cfg["nutrition"]["protein_target_per_kg"]) * weight_kg
+    deficit_threshold = float(cfg["nutrition"].get("deficit_threshold", 300))
+
+    # Yazio-Werte (defensiv -- None bleibt None)
+    cals = yazio.get("calories")
+    protein = yazio.get("protein")
+    carbs = yazio.get("carbs")
+
+    deficit_kcal = (tdee - float(cals)) if cals is not None else None
+    deficit_detected = deficit_kcal is not None and deficit_kcal > deficit_threshold
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    # --- Spalte 1: Kalorien ---
+    with col1:
+        if cals is not None:
+            sub = (
+                f"TDEE {tdee:.0f} · "
+                + (f"-{deficit_kcal:.0f} kcal" if deficit_kcal > 0 else f"+{abs(deficit_kcal):.0f} kcal")
+            )
+            st.markdown(
+                _card("KALORIEN", f"{cals:.0f} kcal",
+                      sub=sub, accent=_traffic_calories(deficit_kcal)),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(_card("KALORIEN", "—", sub="keine Daten",
+                              accent=TRAFFIC["muted"]),
+                        unsafe_allow_html=True)
+
+    # --- Spalte 2: Protein ---
+    with col2:
+        if protein is not None:
+            protein_f = float(protein)
+            protein_ok = protein_f >= protein_target_g
+            accent = TRAFFIC["green"] if protein_ok else TRAFFIC["red"]
+            sub = f"Target {protein_target_g:.0f} g · {protein_f/protein_target_g*100:.0f}%"
+            st.markdown(
+                _card("PROTEIN", f"{protein_f:.0f} g", sub=sub, accent=accent),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(_card("PROTEIN", "—", sub="keine Daten",
+                              accent=TRAFFIC["muted"]),
+                        unsafe_allow_html=True)
+
+    # --- Spalte 3: Kohlenhydrate ---
+    with col3:
+        if carbs is not None:
+            carbs_f = float(carbs)
+            per_kg = carbs_f / weight_kg
+            st.markdown(
+                _card("CARBS", f"{carbs_f:.0f} g",
+                      sub=f"{per_kg:.1f} g/kg",
+                      accent="#3b82f6"),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(_card("CARBS", "—", sub="keine Daten",
+                              accent=TRAFFIC["muted"]),
+                        unsafe_allow_html=True)
+
+    # --- Spalte 4: Deficit-Status (grosses Label) ---
+    with col4:
+        if cals is not None:
+            status_label = "DEFICIT" if deficit_detected else "ON TARGET"
+            status_accent = TRAFFIC["red"] if deficit_detected else TRAFFIC["green"]
+            status_sub = (
+                f"{deficit_kcal:+.0f} kcal vs TDEE"
+                if deficit_kcal is not None else "—"
+            )
+            st.markdown(
+                _card("STATUS", status_label, sub=status_sub, accent=status_accent),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(_card("STATUS", "—", sub="keine Daten",
+                              accent=TRAFFIC["muted"]),
+                        unsafe_allow_html=True)
+
+
 def render_acwr_chart(acwr_df: pd.DataFrame, cfg: dict) -> None:
     """ACWR-Verlauf mit 4 abgestuften Zonen-Bands.
 
@@ -993,6 +1112,9 @@ def main() -> None:
 
     # --- 4. READINESS-ROW ---
     render_readiness_row(layer1, whoop_row, hrv_baseline)
+
+    # --- 4a. NUTRITION-ROW ---
+    render_nutrition_row(date_str, cfg)
 
     st.markdown("&nbsp;", unsafe_allow_html=True)  # Abstand
 
