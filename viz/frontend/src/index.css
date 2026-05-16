@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  background-color: #070809;
+  color: #ffffff;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tab-Bar Safe-Area auf iOS-PWAs */
+.safe-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Flache native Range-Inputs fuer den RPE-Slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #1c1f26;
+  height: 4px;
+  border-radius: 8px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  background: #00ff87;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: #00ff87;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+/* Recharts dark-theme overrides */
+.recharts-cartesian-grid line {
+  stroke: #1c1f26 !important;
+}
+.recharts-text {
+  fill: #3d4151 !important;
+}
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #0d0f14 !important;
+  border: 1px solid #1c1f26 !important;
+  border-radius: 12px !important;
+  color: #ffffff !important;
+}

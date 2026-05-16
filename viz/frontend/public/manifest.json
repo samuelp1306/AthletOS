@@ -1,0 +1,25 @@
+{
+  "name": "Performance OS",
+  "short_name": "PerfOS",
+  "description": "Personal performance dashboard",
+  "theme_color": "#070809",
+  "background_color": "#070809",
+  "display": "standalone",
+  "orientation": "portrait",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
