@@ -33,10 +33,10 @@ export default function Report({ date }) {
       {daily && daily.available === false && (
         <div className="bg-card border-l-[3px] border-muted rounded-card p-4 mb-4">
           <div className="text-[10px] tracking-widest text-muted uppercase">
-            Keine Daten
+            No data
           </div>
           <div className="mt-2 text-sm leading-snug">
-            {daily.message || "Keine Whoop-Daten fuer diesen Tag."}
+            {daily.message || "No Whoop data for this day."}
           </div>
         </div>
       )}
@@ -56,7 +56,7 @@ export default function Report({ date }) {
 
         {!nut?.available && (
           <div className="bg-card border border-border rounded-card p-3 text-muted text-sm">
-            Keine Ernaehrungsdaten fuer diesen Tag.
+            No nutrition data for this day.
           </div>
         )}
 
@@ -71,8 +71,8 @@ export default function Report({ date }) {
               sub={
                 nut.deficit != null
                   ? (nut.deficit > 0
-                      ? `${Math.round(nut.deficit)} kcal unter TDEE`
-                      : `${Math.abs(Math.round(nut.deficit))} kcal ueber TDEE`)
+                      ? `${Math.round(nut.deficit)} kcal below TDEE`
+                      : `${Math.abs(Math.round(nut.deficit))} kcal above TDEE`)
                   : null
               }
             />
@@ -125,7 +125,7 @@ function FlagSection({ protocol }) {
   return (
     <div className="mb-4">
       <div className="text-[10px] tracking-widest text-muted uppercase mb-2 px-1">
-        Aktive Flags · {total}
+        Active flags · {total}
       </div>
       {flags.map((m, i) => (
         <FlagBadge key={`f${i}`} message={m} kind="warning" />

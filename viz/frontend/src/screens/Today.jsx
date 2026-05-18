@@ -48,7 +48,7 @@ export default function Today({ date }) {
         <div className="text-xs text-muted">{date}</div>
       </div>
 
-      {/* Check-In (auch ohne /daily-Antwort schon bedienbar) */}
+      {/* Check-in (usable even before /daily responds) */}
       <CheckIn
         date={date}
         initial={
@@ -71,14 +71,14 @@ export default function Today({ date }) {
       {data && !error && data.available === false && (
         <div className="bg-card border-l-[3px] border-muted rounded-card p-4 mb-4">
           <div className="text-[10px] tracking-widest text-muted uppercase">
-            Keine Daten
+            No data
           </div>
           <div className="mt-2 text-base leading-snug">
-            {data.message || "Keine Whoop-Daten fuer diesen Tag."}
+            {data.message || "No Whoop data for this day."}
           </div>
           <div className="mt-2 text-xs text-muted">
-            Erst <span className="text-white">python -m engine.ingest.whoop</span>{" "}
-            laufen lassen, oder ein anderes Datum waehlen.
+            Run <span className="text-white">python -m engine.ingest.whoop</span>{" "}
+            first, or pick a different date.
           </div>
         </div>
       )}

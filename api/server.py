@@ -32,6 +32,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# .env aus dem Projekt-Root laden, falls vorhanden. So muss der API-Key
+# nicht in jeder neuen Shell gesetzt werden -- einmal in .env und gut.
+# python-dotenv ist optional: wenn nicht installiert, faellt's still durch.
+_DOTENV_LOADED: str | None = None
+try:
+    from dotenv import load_dotenv
+    _env_file = PROJECT_ROOT / ".env"
+    if _env_file.exists():
+        load_dotenv(_env_file, override=False)
+        _DOTENV_LOADED = str(_env_file)
+except Exception:
+    pass
+
 from engine.calculate import calculate  # noqa: E402
 from engine.models import acwr  # noqa: E402
 from engine.models.protocol import DailyData, generate_protocol  # noqa: E402
@@ -167,6 +180,38 @@ class CheckinBody(BaseModel):
 
 app = FastAPI(title="Performance OS API")
 
+
+def _mask_secret(s: str | None) -> str:
+    if not s:
+        return "NOT SET"
+    if len(s) <= 12:
+        return "***"
+    return f"{s[:7]}...{s[-4:]} (len={len(s)})"
+
+
+@app.on_event("startup")
+def _log_env_on_start() -> None:
+    """Startup-Hook -- protokolliert ob kritische Env-Vars greifen.
+
+    Damit der User direkt nach dem uvicorn-Start sieht, ob der API-Key
+    im aktuellen Prozess sichtbar ist (Schluessel maskiert).
+    """
+    import logging
+    log = logging.getLogger("uvicorn.error")
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    log.info("Performance OS API booting")
+    log.info("  .env file:         %s", _DOTENV_LOADED or "not loaded")
+    log.info("  ANTHROPIC_API_KEY: %s", _mask_secret(key))
+    log.info("  DB:                %s", get_db_path())
+    log.info("  config:            %s", CONFIG_PATH)
+    # Smoke-Import von coach.interpret -- failure sehen wir hier sofort,
+    # nicht erst beim ersten /api/report-Call.
+    try:
+        from coach.interpret import generate_daily_report  # noqa: F401
+        log.info("  coach.interpret:   OK")
+    except Exception as e:
+        log.warning("  coach.interpret:   IMPORT FAILED -- %s: %s", type(e).__name__, e)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -193,7 +238,7 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
         content={
             "available": False,
             "error": f"{type(exc).__name__}: {exc}",
-            "message": "Interner Server-Fehler.",
+            "message": "Internal server error.",
         },
     )
 
@@ -241,7 +286,7 @@ def daily(date: str) -> dict[str, Any]:
     except ValueError as e:
         # Tag hat keinen Whoop-Eintrag -> 200 mit leerer Envelope,
         # nicht 4xx (Frontend behandelt 'available: false' lokal).
-        return _empty_daily(date, f"Keine Whoop-Daten fuer {date}: {e}")
+        return _empty_daily(date, f"No Whoop data for {date}: {e}")
 
     # Whoop-Vitals fuer das Frontend (HRV/RHR/Sleep)
     db_path = get_db_path()
@@ -402,7 +447,7 @@ def post_checkin(body: CheckinBody) -> dict:
         return {
             "success": False,
             "error": f"{type(e).__name__}: {e}",
-            "message": "Konnte Check-in nicht speichern.",
+            "message": "Could not save check-in.",
         }
     return {
         "success": True,
@@ -455,39 +500,47 @@ def nutrition(date: str) -> dict:
 
 # --- /api/report --------------------------------------------------------
 
-_REPORT_FALLBACK = "AI Report nicht verfuegbar. API Key pruefen."
-
-
 @app.get("/api/report")
 def report(date: str) -> dict:
-    # 1) Kein API-Key -> Fallback-Text (kein 5xx).
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    import logging
+    log = logging.getLogger("uvicorn.error")
+
+    # 1) Kein API-Key in der Prozess-Env -> Fallback-Text.
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        log.warning("/api/report: ANTHROPIC_API_KEY missing in process env")
         return {
             "date": date,
             "available": False,
-            "report": _REPORT_FALLBACK,
+            "reason": "no_api_key",
+            "report": "AI report unavailable. ANTHROPIC_API_KEY not set in server process.",
         }
+    log.info("/api/report: key present (%s), date=%s", _mask_secret(key), date)
 
-    # 2) Kein Layer-1-Output fuer das Datum -> Fallback statt 404.
+    # 2) Kein Layer-1-Output -> Fallback.
     cfg = load_config()
     try:
         layer1 = calculate(date, cfg)
     except ValueError as e:
+        log.warning("/api/report: no daily data for %s: %s", date, e)
         return {
             "date": date,
             "available": False,
-            "report": f"Keine Daten fuer {date}: {e}",
+            "reason": "no_data",
+            "report": f"No data for {date}: {e}",
         }
 
-    # 3) API-Call fehlgeschlagen (Netz, Auth, etc) -> Fallback-Text.
+    # 3) API-Call selbst.
     try:
         from coach.interpret import generate_daily_report
         text = generate_daily_report(layer1, cfg)
     except Exception as e:
+        log.exception("/api/report: generate_daily_report failed")
         return {
             "date": date,
             "available": False,
-            "report": f"{_REPORT_FALLBACK} ({type(e).__name__}: {e})",
+            "reason": "api_failure",
+            "report": f"AI report failed: {type(e).__name__}: {e}",
         }
 
-    return {"date": date, "available": True, "report": text}
+    return {"date": date, "available": True, "reason": None, "report": text}

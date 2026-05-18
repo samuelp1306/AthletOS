@@ -72,8 +72,8 @@ def calculate(date: str, config: dict | None = None) -> dict[str, Any]:
 
     if whoop is None:
         raise ValueError(
-            f"Kein whoop_daily-Eintrag fuer {date}. "
-            "Ohne Whoop-Recovery laesst sich kein Readiness berechnen."
+            f"No whoop_daily entry for {date}. "
+            "Cannot compute readiness without Whoop recovery."
         )
 
     # --- Nutrition (Yazio fehlt -> deficit_detected=False, protein_ok=False) ---

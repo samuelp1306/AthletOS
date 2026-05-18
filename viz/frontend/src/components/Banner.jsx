@@ -35,7 +35,7 @@ export default function Banner({ protocol }) {
         </div>
         <div className="text-2xl font-semibold mt-1">—</div>
         <div className="text-sm text-muted mt-1">
-          Kein Protocol-Output verfuegbar.
+          No protocol output available.
         </div>
       </div>
     );

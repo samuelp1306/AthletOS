@@ -67,7 +67,7 @@ export default function Trends({ date }) {
   if (!data || !data.dates || data.dates.length === 0) {
     return (
       <div className="max-w-md mx-auto px-4 pt-4 text-muted text-sm">
-        Keine Daten im Zeitraum.
+        No data in this range.
       </div>
     );
   }
@@ -101,7 +101,7 @@ export default function Trends({ date }) {
       {/* Header */}
       <div className="flex justify-between items-baseline mb-4">
         <div className="text-[10px] tracking-widest text-muted uppercase">
-          Trends · 30 Tage
+          Trends · 30 days
         </div>
         <div className="text-xs text-muted">{date}</div>
       </div>

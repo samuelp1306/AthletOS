@@ -50,8 +50,8 @@ export default function ReportCard({ date }) {
       )}
       {!text && !loading && !error && (
         <div className="text-muted text-xs">
-          Klick auf Generate -- Claude liest die Tageswerte und schreibt
-          einen kurzen Coach-Report.
+          Click Generate -- Claude reads today's metrics and writes a short
+          coach report.
         </div>
       )}
     </div>

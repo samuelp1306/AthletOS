@@ -6,9 +6,9 @@ import { apiPost } from "../hooks/useApi.js";
 // Training Log nach der Session, nicht in den Morgens-Check-in.
 
 const READINESS_OPTIONS = [
-  { id: "yes", label: "Vollgas" },
-  { id: "limited", label: "Eingeschraenkt" },
-  { id: "no", label: "Nein" },
+  { id: "yes", label: "Full intensity" },
+  { id: "limited", label: "Limited" },
+  { id: "no", label: "No" },
 ];
 
 const REASON_OPTIONS = [
@@ -16,7 +16,7 @@ const REASON_OPTIONS = [
   { id: "fatigue", label: "Fatigue" },
   { id: "mental", label: "Mental" },
   { id: "deficit", label: "Deficit" },
-  { id: "sleep", label: "Schlecht geschlafen" },
+  { id: "sleep", label: "Bad sleep" },
 ];
 
 const READINESS_LABEL = Object.fromEntries(
@@ -106,7 +106,7 @@ export default function CheckIn({ date, initial, onSaved }) {
   return (
     <div className="bg-card border border-border rounded-card p-4 mb-4">
       <div className="text-[10px] tracking-widest text-muted uppercase mb-3">
-        Wie heute?
+        Ready for full intensity?
       </div>
 
       {/* Drei grosse Buttons -- die einzige Frage */}
@@ -146,13 +146,13 @@ export default function CheckIn({ date, initial, onSaved }) {
       {/* Reason nur wenn limited/no */}
       {needsReason && (
         <div className="mb-3">
-          <label className="block text-xs text-muted mb-1">Grund</label>
+          <label className="block text-xs text-muted mb-1">Reason</label>
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             className="w-full bg-bg border border-border rounded-pill px-3 py-3 text-base text-white"
           >
-            <option value="">Bitte waehlen ...</option>
+            <option value="">Please choose ...</option>
             {REASON_OPTIONS.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}
