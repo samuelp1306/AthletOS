@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react";
 import { apiPost } from "../hooks/useApi.js";
 
+// Morning Check-in: EINE Frage (Vollgas/Eingeschraenkt/Nein), bei den
+// negativen Antworten ein optionaler Grund. Kein RPE -- das gehoert ins
+// Training Log nach der Session, nicht in den Morgens-Check-in.
+
 const READINESS_OPTIONS = [
-  { id: "yes", label: "Ja" },
-  { id: "limited", label: "Limited" },
+  { id: "yes", label: "Vollgas" },
+  { id: "limited", label: "Eingeschraenkt" },
   { id: "no", label: "Nein" },
 ];
 
 const REASON_OPTIONS = [
-  { id: "none", label: "Good" },
   { id: "soreness", label: "Soreness" },
   { id: "fatigue", label: "Fatigue" },
   { id: "mental", label: "Mental" },
   { id: "deficit", label: "Deficit" },
-  { id: "sleep", label: "Bad Sleep" },
+  { id: "sleep", label: "Schlecht geschlafen" },
 ];
 
 const READINESS_LABEL = Object.fromEntries(
@@ -27,28 +30,42 @@ export default function CheckIn({ date, initial, onSaved }) {
   const wasSubmitted = !!(initial && initial.readiness);
 
   const [expanded, setExpanded] = useState(!wasSubmitted);
-  const [rpe, setRpe] = useState(initial?.rpe ?? 5);
-  const [readiness, setReadiness] = useState(initial?.readiness || "yes");
-  const [reason, setReason] = useState(initial?.reason || "none");
+  const [readiness, setReadiness] = useState(initial?.readiness || null);
+  const [reason, setReason] = useState(initial?.reason || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
 
-  // Daten kommen evtl. asynchron rein
+  // Daten kommen evtl. asynchron rein, oder Datum wechselt
   useEffect(() => {
     if (initial?.readiness) {
-      setRpe(initial.rpe ?? 5);
       setReadiness(initial.readiness);
-      setReason(initial.reason || "none");
+      setReason(initial.reason || "");
       setExpanded(false);
+    } else {
+      setReadiness(null);
+      setReason("");
+      setExpanded(true);
     }
-  }, [initial?.readiness, initial?.rpe, initial?.reason]);
+  }, [date, initial?.readiness, initial?.reason]);
+
+  const needsReason = readiness === "limited" || readiness === "no";
+  const canSubmit =
+    readiness != null && (!needsReason || (reason && reason !== ""));
 
   async function submit() {
+    if (!canSubmit) return;
     setSaving(true);
     setErr(null);
     try {
-      await apiPost("/api/checkin", { date, rpe, readiness, reason });
-      onSaved?.({ rpe, readiness, reason });
+      // 'yes' speichert reason 'none' fuer konsistente Auswertung downstream.
+      const payload = {
+        date,
+        readiness,
+        reason: needsReason ? reason : "none",
+        rpe: null,
+      };
+      await apiPost("/api/checkin", payload);
+      onSaved?.(payload);
       setExpanded(false);
     } catch (e) {
       setErr(e.message || String(e));
@@ -57,7 +74,7 @@ export default function CheckIn({ date, initial, onSaved }) {
     }
   }
 
-  // ---------- Collapsed -----------
+  // ---------- Collapsed ----------
   if (!expanded) {
     return (
       <button
@@ -74,12 +91,8 @@ export default function CheckIn({ date, initial, onSaved }) {
               {READINESS_LABEL[readiness] || readiness}
               {reason && reason !== "none" && (
                 <span className="text-muted">
-                  {" "}
-                  · {REASON_LABEL[reason] || reason}
+                  {" "}· {REASON_LABEL[reason] || reason}
                 </span>
-              )}
-              {rpe != null && (
-                <span className="text-muted"> · RPE {rpe}</span>
               )}
             </div>
           </div>
@@ -89,40 +102,40 @@ export default function CheckIn({ date, initial, onSaved }) {
     );
   }
 
-  // ---------- Expanded -----------
+  // ---------- Expanded ----------
   return (
     <div className="bg-card border border-border rounded-card p-4 mb-4">
       <div className="text-[10px] tracking-widest text-muted uppercase mb-3">
-        Check-in
+        Wie heute?
       </div>
 
-      {/* RPE */}
-      <label className="block text-xs text-muted mb-1">RPE · {rpe}</label>
-      <input
-        type="range"
-        min="1"
-        max="10"
-        step="1"
-        value={rpe}
-        onChange={(e) => setRpe(Number(e.target.value))}
-        className="w-full mb-4"
-      />
-
-      {/* Readiness Buttons */}
-      <div className="text-xs text-muted mb-1">Vollgas heute?</div>
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      {/* Drei grosse Buttons -- die einzige Frage */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
         {READINESS_OPTIONS.map((o) => {
           const isOn = readiness === o.id;
+          const variant =
+            o.id === "yes"
+              ? "good"
+              : o.id === "limited"
+              ? "warn"
+              : "bad";
+          const classes = isOn
+            ? variant === "good"
+              ? "bg-good/15 border-good text-good"
+              : variant === "warn"
+              ? "bg-warn/15 border-warn text-warn"
+              : "bg-bad/15 border-bad text-bad"
+            : "border-border text-muted";
+
           return (
             <button
               key={o.id}
-              onClick={() => setReadiness(o.id)}
-              className={
-                "py-2 rounded-pill text-sm border " +
-                (isOn
-                  ? "bg-good/10 border-good text-good"
-                  : "border-border text-muted")
-              }
+              onClick={() => {
+                setReadiness(o.id);
+                // 'yes' braucht keinen Grund -> reset
+                if (o.id === "yes") setReason("");
+              }}
+              className={`py-4 rounded-pill text-base font-medium border-2 ${classes}`}
             >
               {o.label}
             </button>
@@ -130,24 +143,29 @@ export default function CheckIn({ date, initial, onSaved }) {
         })}
       </div>
 
-      {/* Reason */}
-      <label className="block text-xs text-muted mb-1">Grund</label>
-      <select
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        className="w-full bg-bg border border-border rounded-pill px-3 py-2 text-sm mb-4 text-white"
-      >
-        {REASON_OPTIONS.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      {/* Reason nur wenn limited/no */}
+      {needsReason && (
+        <div className="mb-3">
+          <label className="block text-xs text-muted mb-1">Grund</label>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full bg-bg border border-border rounded-pill px-3 py-3 text-base text-white"
+          >
+            <option value="">Bitte waehlen ...</option>
+            {REASON_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <button
         onClick={submit}
-        disabled={saving}
-        className="w-full py-2 rounded-pill bg-good text-bg font-semibold text-sm disabled:opacity-50"
+        disabled={!canSubmit || saving}
+        className="w-full py-3 rounded-pill bg-good text-bg font-semibold text-base disabled:opacity-40"
       >
         {saving ? "Saving..." : "Submit"}
       </button>
