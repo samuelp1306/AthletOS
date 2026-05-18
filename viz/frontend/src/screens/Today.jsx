@@ -68,7 +68,22 @@ export default function Today({ date }) {
         </div>
       )}
 
-      {data && !error && (
+      {data && !error && data.available === false && (
+        <div className="bg-card border-l-[3px] border-muted rounded-card p-4 mb-4">
+          <div className="text-[10px] tracking-widest text-muted uppercase">
+            Keine Daten
+          </div>
+          <div className="mt-2 text-base leading-snug">
+            {data.message || "Keine Whoop-Daten fuer diesen Tag."}
+          </div>
+          <div className="mt-2 text-xs text-muted">
+            Erst <span className="text-white">python -m engine.ingest.whoop</span>{" "}
+            laufen lassen, oder ein anderes Datum waehlen.
+          </div>
+        </div>
+      )}
+
+      {data && !error && data.available !== false && (
         <>
           {/* Recommendation Banner */}
           <Banner protocol={data.protocol} />

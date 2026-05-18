@@ -30,10 +30,21 @@ export default function Report({ date }) {
       {dl && <div className="text-muted text-sm">Loading...</div>}
       {de && <div className="text-bad text-sm">{de}</div>}
 
-      {daily && <Banner protocol={daily.protocol} />}
+      {daily && daily.available === false && (
+        <div className="bg-card border-l-[3px] border-muted rounded-card p-4 mb-4">
+          <div className="text-[10px] tracking-widest text-muted uppercase">
+            Keine Daten
+          </div>
+          <div className="mt-2 text-sm leading-snug">
+            {daily.message || "Keine Whoop-Daten fuer diesen Tag."}
+          </div>
+        </div>
+      )}
+
+      {daily && daily.available !== false && <Banner protocol={daily.protocol} />}
 
       {/* ---- Flags ---- */}
-      {daily?.protocol && (
+      {daily?.available !== false && daily?.protocol && (
         <FlagSection protocol={daily.protocol} />
       )}
 

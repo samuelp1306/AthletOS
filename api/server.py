@@ -180,6 +180,52 @@ app.add_middleware(
 )
 
 
+# Globaler Exception-Handler: auch bei unerwarteten Fehlern soll der Client
+# valides JSON sehen, kein HTML-Stacktrace.
+from fastapi import Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={
+            "available": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "message": "Interner Server-Fehler.",
+        },
+    )
+
+
+# Default fuer 'available'/'message' im Daily-Schema, damit der Erfolgs- und
+# der Fehlerpfad dieselben Keys liefern.
+def _empty_daily(date_str: str, message: str) -> dict[str, Any]:
+    return {
+        "date": date_str,
+        "available": False,
+        "message": message,
+        "whoop_recovery": None,
+        "adjusted_readiness": None,
+        "corrections_applied": [],
+        "acwr": None,
+        "acwr_zone": None,
+        "deficit_detected": False,
+        "protein_ok": False,
+        "checkin": None,
+        "checkin_reason": None,
+        "rpe": None,
+        "hrv": None,
+        "rhr": None,
+        "sleep_hours": None,
+        "sleep_efficiency": None,
+        "hrv_baseline": None,
+        "rhr_baseline": None,
+        "discrepancy": 0,
+        "protocol": None,
+    }
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True}
@@ -193,7 +239,9 @@ def daily(date: str) -> dict[str, Any]:
     try:
         layer1 = calculate(date, cfg)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        # Tag hat keinen Whoop-Eintrag -> 200 mit leerer Envelope,
+        # nicht 4xx (Frontend behandelt 'available: false' lokal).
+        return _empty_daily(date, f"Keine Whoop-Daten fuer {date}: {e}")
 
     # Whoop-Vitals fuer das Frontend (HRV/RHR/Sleep)
     db_path = get_db_path()
@@ -235,6 +283,8 @@ def daily(date: str) -> dict[str, Any]:
 
     return {
         "date": date,
+        "available": True,
+        "message": None,
         "whoop_recovery": whoop_recovery,
         "adjusted_readiness": adjusted,
         "corrections_applied": layer1.get("corrections_applied") or [],
@@ -328,29 +378,39 @@ def trends(days: int = 30, end_date: str | None = None) -> dict[str, list]:
 
 @app.post("/api/checkin")
 def post_checkin(body: CheckinBody) -> dict:
-    if body.readiness not in {"yes", "limited", "no"}:
-        raise HTTPException(400, "readiness must be yes|limited|no")
-
     db_path = get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
-        # idempotente Schema-Pflege (rpe-Spalte hinzufuegen, falls aelter)
-        try:
-            from engine.ingest import checkin as checkin_ingest
-            checkin_ingest.migrate_add_rpe_column(conn)
-        except Exception:
+    try:
+        with sqlite3.connect(db_path) as conn:
+            # idempotente Schema-Pflege (Tabelle anlegen + rpe-Spalte ggf. ergaenzen)
+            try:
+                from engine.ingest import checkin as checkin_ingest
+                checkin_ingest.migrate_add_rpe_column(conn)
+            except Exception:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS daily_checkin ("
+                    "date TEXT PRIMARY KEY, readiness TEXT NOT NULL, "
+                    "reason TEXT, rpe REAL)"
+                )
             conn.execute(
-                "CREATE TABLE IF NOT EXISTS daily_checkin ("
-                "date TEXT PRIMARY KEY, readiness TEXT NOT NULL, "
-                "reason TEXT, rpe REAL)"
+                "INSERT OR REPLACE INTO daily_checkin (date, readiness, reason, rpe) "
+                "VALUES (?, ?, ?, ?)",
+                (body.date, body.readiness, body.reason, body.rpe),
             )
-        conn.execute(
-            "INSERT OR REPLACE INTO daily_checkin (date, readiness, reason, rpe) "
-            "VALUES (?, ?, ?, ?)",
-            (body.date, body.readiness, body.reason, body.rpe),
-        )
-        conn.commit()
-    return {"success": True}
+            conn.commit()
+    except sqlite3.Error as e:
+        return {
+            "success": False,
+            "error": f"{type(e).__name__}: {e}",
+            "message": "Konnte Check-in nicht speichern.",
+        }
+    return {
+        "success": True,
+        "date": body.date,
+        "readiness": body.readiness,
+        "reason": body.reason,
+        "rpe": body.rpe,
+    }
 
 
 # --- /api/nutrition -----------------------------------------------------
@@ -395,21 +455,39 @@ def nutrition(date: str) -> dict:
 
 # --- /api/report --------------------------------------------------------
 
+_REPORT_FALLBACK = "AI Report nicht verfuegbar. API Key pruefen."
+
+
 @app.get("/api/report")
 def report(date: str) -> dict:
+    # 1) Kein API-Key -> Fallback-Text (kein 5xx).
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(503, "ANTHROPIC_API_KEY nicht gesetzt")
+        return {
+            "date": date,
+            "available": False,
+            "report": _REPORT_FALLBACK,
+        }
 
+    # 2) Kein Layer-1-Output fuer das Datum -> Fallback statt 404.
     cfg = load_config()
     try:
         layer1 = calculate(date, cfg)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        return {
+            "date": date,
+            "available": False,
+            "report": f"Keine Daten fuer {date}: {e}",
+        }
 
+    # 3) API-Call fehlgeschlagen (Netz, Auth, etc) -> Fallback-Text.
     try:
         from coach.interpret import generate_daily_report
         text = generate_daily_report(layer1, cfg)
     except Exception as e:
-        raise HTTPException(500, f"{type(e).__name__}: {e}")
+        return {
+            "date": date,
+            "available": False,
+            "report": f"{_REPORT_FALLBACK} ({type(e).__name__}: {e})",
+        }
 
-    return {"date": date, "report": text}
+    return {"date": date, "available": True, "report": text}
