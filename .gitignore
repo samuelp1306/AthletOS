@@ -17,8 +17,7 @@ __pycache__/
 *$py.class
 .venv/
 venv/
-.env
-.env.*
+.env*
 !.env.example
 
 # Editors / OS
