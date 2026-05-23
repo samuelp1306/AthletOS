@@ -40,6 +40,13 @@ try:
     from dotenv import load_dotenv
     _env_file = PROJECT_ROOT / ".env"
     if _env_file.exists():
+        # Treat inherited *empty* env vars as "unset" so .env can fill them.
+        # Some parent processes (IDE/agent runtimes) pass through empty strings
+        # for unset secrets; with override=False those empty values would otherwise
+        # win over the real value in .env.
+        for _k in ("ANTHROPIC_API_KEY",):
+            if os.environ.get(_k) == "":
+                del os.environ[_k]
         load_dotenv(_env_file, override=False)
         _DOTENV_LOADED = str(_env_file)
 except Exception:
