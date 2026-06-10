@@ -89,12 +89,18 @@ def calculate(date: str, config: dict | None = None) -> dict[str, Any]:
     nut = nutrition.compute(nutrition_day, cfg)
 
     # --- Readiness ---
+    # hrv/rhr/db_path/date werden mitgegeben, damit readiness.compute()
+    # die Buchheit-2014 HRV+RHR-Baseline aus whoop_daily ziehen kann.
     readiness_day = {
         "recovery_score": whoop.get("recovery_score"),
         "deficit_detected": nut["deficit_detected"],
         "checkin": checkin.get("readiness") if checkin else None,
         "sleep_efficiency": whoop.get("sleep_efficiency"),
         "sleep_hours": whoop.get("sleep_hours"),
+        "hrv": whoop.get("hrv"),
+        "rhr": whoop.get("rhr"),
+        "db_path": str(db_path),
+        "date": date,
     }
     rd = readiness.compute(readiness_day, cfg)
 
