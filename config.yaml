@@ -33,6 +33,18 @@ readiness:
   gate_recovery_deficit: 80
   gate_recovery_checkin_no: 70
   gate_recovery_checkin_limited: 80
+  # --- HRV/RHR Combined Signal (Buchheit 2014) ---
+  # Baseline = Median ueber baseline_window Tage; Tageswert = Mean der letzten
+  # smoothing_window Tage. HRV in Prozent vs Baseline, RHR in absoluten bpm.
+  hrv_rhr:
+    baseline_window: 28
+    smoothing_window: 3
+    hrv_high_pct: 5            # HRV > baseline +5%  = "elevated"
+    hrv_low_pct: 10            # HRV < baseline -10% = "depressed"
+    rhr_delta_bpm: 3           # +/- 3 bpm vs Baseline = signifikant
+    correction_parasympathetic_dominant: 5    # echt erholt: HRV up, RHR down
+    correction_sympathetic_activated: -10     # versteckter Stress: HRV up, RHR up
+    correction_sympathetic_dominant: -15      # akuter Stress: HRV down, RHR up
 
 # --- ACWR Thresholds ---
 acwr:
