@@ -1,0 +1,7 @@
+anthropic
+fastapi
+pandas
+pydantic
+scipy
+streamlit
+PyYAML
