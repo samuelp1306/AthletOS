@@ -1,16 +1,16 @@
 # Performance OS
 
 ## Purpose
-A personal, two-layer performance system for a semi-professional footballer. It combines Whoop wearable data, Yazio nutrition tracking, training logs, and a daily subjective check-in into an adjusted readiness score — then uses the Claude API to generate a plain-language daily report.
+A personal, two-layer performance system for a semi-professional footballer. It combines Whoop wearable data, training logs, and a daily subjective check-in into an adjusted readiness score — then uses the Claude API to generate a plain-language daily report.
 
-The core problem it solves: Whoop Recovery Scores are systematically inaccurate in specific contexts (caloric deficit, psychological stress, alcohol) because they rely on HRV/RHR/sleep alone. This system adds the missing signals and corrects for known biases.
+The core problem it solves: Whoop Recovery Scores are systematically inaccurate in specific contexts (psychological stress, alcohol, subjective fatigue) because they rely on HRV/RHR/sleep alone. This system adds the missing signals and corrects for known biases.
 
 ## Architecture — Two Layers (non-negotiable)
 
 ### Layer 1: Engine (`engine/`)
 - Pure Python. No LLM calls. No API calls. No internet required.
 - Deterministic: same inputs → same outputs, every time.
-- Handles: data ingestion, ACWR calculation, readiness scoring, discrepancy detection, nutrition checks, Banister fitness-fatigue model.
+- Handles: data ingestion, ACWR calculation, readiness scoring, discrepancy detection, Banister fitness-fatigue model.
 - This layer DECIDES.
 
 ### Layer 2: Coach (`coach/`)
@@ -35,22 +35,20 @@ The core problem it solves: Whoop Recovery Scores are systematically inaccurate 
 ```
 performance-os/
 ├── data/
-│   ├── raw/                     # Whoop CSVs, Yazio exports
+│   ├── raw/                     # Whoop CSVs
 │   └── processed/               # Cleaned daily data
 ├── db/
 │   └── performance.db           # SQLite database
 ├── engine/                      # LAYER 1 — Calculation Engine
 │   ├── ingest/
 │   │   ├── whoop.py             # Whoop CSV → SQLite
-│   │   ├── yazio.py             # Yazio data → SQLite
 │   │   ├── training.py          # Training log → SQLite
 │   │   └── checkin.py           # Daily check-in → SQLite
 │   ├── models/
 │   │   ├── acwr.py              # Acute:Chronic Workload Ratio
 │   │   ├── readiness.py         # Adjusted Readiness Score
 │   │   ├── discrepancy.py       # Whoop vs. subjective delta
-│   │   ├── banister.py          # Fitness-Fatigue model
-│   │   └── nutrition.py         # Nutrition threshold checks
+│   │   └── banister.py          # Fitness-Fatigue model
 │   └── calculate.py             # Orchestrates all models
 ├── coach/                       # LAYER 2 — Interpretation
 │   ├── prompts/
@@ -84,16 +82,6 @@ CREATE TABLE whoop_daily (
     calories_burned REAL
 );
 
--- Yazio nutrition data
-CREATE TABLE yazio_daily (
-    date TEXT PRIMARY KEY,
-    calories REAL,
-    protein REAL,
-    carbs REAL,
-    fat REAL,
-    water_ml REAL
-);
-
 -- Training sessions (multiple per day possible)
 CREATE TABLE training_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,7 +96,7 @@ CREATE TABLE training_log (
 CREATE TABLE daily_checkin (
     date TEXT PRIMARY KEY,
     readiness TEXT NOT NULL,      -- yes, limited, no
-    reason TEXT                   -- soreness, fatigue, mental, deficit, none
+    reason TEXT                   -- soreness, fatigue, mental, sleep, none
 );
 ```
 
@@ -124,7 +112,6 @@ CREATE TABLE daily_checkin (
 ### Readiness Score (engine/models/readiness.py)
 - Base = Whoop Recovery Score (0–100)
 - Corrections applied additively, result clamped to 0–100:
-  - Caloric deficit (Yazio cals < config.tdee - 300) AND recovery > 80 → -15
   - Check-in "no" AND recovery > 70 → -20
   - Check-in "limited" AND recovery > 80 → -10
   - Sleep efficiency > 90% AND hours > 7.5 → +5
@@ -136,12 +123,6 @@ CREATE TABLE daily_checkin (
 - Delta = whoop_recovery - checkin_numeric
 - If abs(delta) > 20 → flag as discrepancy
 - Track discrepancy history for pattern detection
-
-### Nutrition (engine/models/nutrition.py)
-- protein_ok: protein >= config.protein_target_per_kg * config.weight_kg
-- deficit_detected: calories < config.tdee - 300
-- carb_low_pre_training: if tomorrow has planned session AND carbs < config.carb_target_pre_training
-- Output: dict of boolean flags + context strings
 
 ## Coding Standards
 - All functions have docstrings explaining inputs, outputs, and logic

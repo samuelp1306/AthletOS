@@ -15,7 +15,6 @@ const REASON_OPTIONS = [
   { id: "soreness", label: "Soreness" },
   { id: "fatigue", label: "Fatigue" },
   { id: "mental", label: "Mental" },
-  { id: "deficit", label: "Deficit" },
   { id: "sleep", label: "Bad sleep" },
 ];
 

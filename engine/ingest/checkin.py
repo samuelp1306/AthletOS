@@ -14,7 +14,7 @@ oder eine Liste solcher Objekte (typischer Fall, weil mehrere Tage in einer Date
 Felder:
     date       (Pflicht, YYYY-MM-DD)
     readiness  (Pflicht: 'yes' | 'limited' | 'no')
-    reason     (optional: 'soreness' | 'fatigue' | 'mental' | 'deficit' | 'none' | None)
+    reason     (optional: 'soreness' | 'fatigue' | 'mental' | 'sleep' | 'none' | None)
 
 Idempotent: ON CONFLICT(date) DO UPDATE -- erneutes Einspielen ueberschreibt einfach.
 Fehlt die JSON-Datei, gibt das Modul 0 zurueck und meldet das (kein Crash).
@@ -33,7 +33,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 VALID_READINESS = {"yes", "limited", "no"}
-VALID_REASONS = {"soreness", "fatigue", "mental", "deficit", "sleep", "none"}
+VALID_REASONS = {"soreness", "fatigue", "mental", "sleep", "none"}
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS daily_checkin (

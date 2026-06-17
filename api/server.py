@@ -5,7 +5,6 @@ Endpoints:
     GET  /api/trends?days=30&end_date=... Arrays fuer Charts
     POST /api/checkin                     Speichert daily_checkin
     GET  /api/report?date=YYYY-MM-DD      Claude-Report (synchron)
-    GET  /api/nutrition?date=YYYY-MM-DD   yazio_daily-Werte + Targets
 
 Start:
     cd <project_root>
@@ -120,12 +119,9 @@ def _normalize_position(cfg: dict) -> str:
 def _build_daily_data(date: str, layer1: dict, cfg: dict) -> DailyData:
     """Konstruiert DailyData fuer protocol.generate_protocol()."""
     db_path = get_db_path()
-    weight_kg = float(cfg["athlete"]["weight_kg"])
-    protein_target_g = float(cfg["nutrition"]["protein_target_per_kg"]) * weight_kg
 
     with sqlite3.connect(db_path) as conn:
         whoop = _fetch_one(conn, "whoop_daily", date) or {}
-        yazio = _fetch_one(conn, "yazio_daily", date) or {}
         rpe_yesterday = _fetch_rpe_yesterday(conn, date)
 
         # 28-Tage Baselines aus whoop_daily bis date
@@ -160,12 +156,6 @@ def _build_daily_data(date: str, layer1: dict, cfg: dict) -> DailyData:
         rhr_baseline=rhr_baseline,
         sleep_hours=float(whoop.get("sleep_hours") or 0),
         sleep_efficiency=float(whoop.get("sleep_efficiency") or 0),
-        calories=float(yazio["calories"]) if yazio.get("calories") is not None else None,
-        tdee=float(cfg["nutrition"]["tdee"]),
-        protein_g=float(yazio["protein"]) if yazio.get("protein") is not None else None,
-        protein_target_g=protein_target_g,
-        carbs_g=float(yazio["carbs"]) if yazio.get("carbs") is not None else None,
-        deficit_detected=bool(layer1.get("deficit_detected", False)),
         position=_normalize_position(cfg),
     )
 
@@ -262,8 +252,6 @@ def _empty_daily(date_str: str, message: str) -> dict[str, Any]:
         "corrections_applied": [],
         "acwr": None,
         "acwr_zone": None,
-        "deficit_detected": False,
-        "protein_ok": False,
         "checkin": None,
         "checkin_reason": None,
         "rpe": None,
@@ -320,7 +308,6 @@ def daily(date: str) -> dict[str, Any]:
             "confidence": proto.confidence,
             "recommendation_reasons": list(proto.recommendation_reasons or []),
             "flags": list(proto.flags or []),
-            "nutrition_flags": list(proto.nutrition_flags or []),
             "bloodwork_flags": list(proto.bloodwork_flags or []),
         }
     except Exception as e:  # nicht den ganzen Daily-Call killen
@@ -342,8 +329,6 @@ def daily(date: str) -> dict[str, Any]:
         "corrections_applied": layer1.get("corrections_applied") or [],
         "acwr": layer1.get("acwr"),
         "acwr_zone": layer1.get("acwr_zone"),
-        "deficit_detected": bool(layer1.get("deficit_detected", False)),
-        "protein_ok": bool(layer1.get("protein_ok", False)),
         "checkin": checkin_row.get("readiness") or layer1.get("checkin"),
         "checkin_reason": checkin_row.get("reason") or layer1.get("checkin_reason"),
         "rpe": checkin_row.get("rpe"),
@@ -462,46 +447,6 @@ def post_checkin(body: CheckinBody) -> dict:
         "readiness": body.readiness,
         "reason": body.reason,
         "rpe": body.rpe,
-    }
-
-
-# --- /api/nutrition -----------------------------------------------------
-
-@app.get("/api/nutrition")
-def nutrition(date: str) -> dict:
-    cfg = load_config()
-    db_path = get_db_path()
-    weight_kg = float(cfg["athlete"]["weight_kg"])
-    tdee = float(cfg["nutrition"]["tdee"])
-    protein_target = float(cfg["nutrition"]["protein_target_per_kg"]) * weight_kg
-
-    with sqlite3.connect(db_path) as conn:
-        row = _fetch_one(conn, "yazio_daily", date)
-
-    if not row:
-        return {
-            "date": date,
-            "available": False,
-            "calories": None, "protein": None, "carbs": None, "fat": None,
-            "tdee": tdee, "protein_target": protein_target,
-            "weight_kg": weight_kg,
-            "deficit": None,
-        }
-
-    cals = float(row["calories"]) if row.get("calories") is not None else None
-    deficit = (tdee - cals) if cals is not None else None
-
-    return {
-        "date": date,
-        "available": True,
-        "calories": cals,
-        "protein": float(row["protein"]) if row.get("protein") is not None else None,
-        "carbs": float(row["carbs"]) if row.get("carbs") is not None else None,
-        "fat": float(row["fat"]) if row.get("fat") is not None else None,
-        "tdee": tdee,
-        "protein_target": protein_target,
-        "weight_kg": weight_kg,
-        "deficit": deficit,
     }
 
 

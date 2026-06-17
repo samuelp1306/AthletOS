@@ -32,7 +32,7 @@ class DailyData:
 
     # Subjective
     checkin: str                     # yes | limited | no
-    checkin_reason: str              # soreness | fatigue | mental | deficit | none
+    checkin_reason: str              # soreness | fatigue | mental | sleep | none
     rpe_yesterday: Optional[float]   # 1-10 from yesterday's session
 
     # Whoop vitals
@@ -42,14 +42,6 @@ class DailyData:
     rhr_baseline: float              # 28-day avg
     sleep_hours: float
     sleep_efficiency: float          # %
-
-    # Nutrition (from Yazio)
-    calories: Optional[float]        # kcal yesterday
-    tdee: float                      # from config
-    protein_g: Optional[float]
-    protein_target_g: float          # from config
-    carbs_g: Optional[float]
-    deficit_detected: bool           # from nutrition.py
 
     # GPS (from STATSports, if available)
     gps_available: bool = False
@@ -87,7 +79,6 @@ class ProtocolOutput:
 
     # Flags and warnings
     flags: list = field(default_factory=list)           # warning strings
-    nutrition_flags: list = field(default_factory=list)  # nutrition-specific
     bloodwork_flags: list = field(default_factory=list)  # periodic context
 
     # Recovery protocol
@@ -159,8 +150,6 @@ def select_training_recommendation(data: DailyData) -> tuple[str, list, str]:
 
     elif data.adjusted_readiness >= 50:
         reasons.append(f"Adjusted readiness moderate ({data.adjusted_readiness}%).")
-        if data.deficit_detected:
-            reasons.append("Caloric deficit detected — energy availability compromised.")
         if data.checkin == "limited":
             reasons.append(f"Subjective: limited ({data.checkin_reason}).")
         return "reduced", reasons, "moderate"
@@ -310,45 +299,6 @@ def generate_flags(data: DailyData) -> list:
     return flags
 
 
-def generate_nutrition_flags(data: DailyData) -> list:
-    """
-    Nutrition-specific flags.
-    Source: Match Day Protocol doc, Performance Nutrition Blueprint
-    """
-    flags = []
-
-    # Caloric deficit — graduated correction
-    # Source: Core thesis — parasympathetic inflation from deficit
-    # Graduated: <200 = irrelevant, 200-400 = mild, 400-600 = moderate, >600 = severe
-    if data.deficit_detected and data.calories is not None:
-        deficit = data.tdee - data.calories
-        if deficit >= 600:
-            flags.append(f"Severe caloric deficit: ~{deficit:.0f} kcal below TDEE. Whoop Recovery significantly inflated. Energy availability critically low.")
-        elif deficit >= 400:
-            flags.append(f"Moderate caloric deficit: ~{deficit:.0f} kcal below TDEE. This inflates Whoop Recovery (parasympathetic dominance). Eat to target today.")
-        elif deficit >= 200:
-            flags.append(f"Mild caloric deficit: ~{deficit:.0f} kcal below TDEE. Minor effect on Recovery score accuracy. Monitor.")
-        # <200 kcal = no flag, too small to matter
-
-    # Protein
-    if data.protein_g is not None and data.protein_g < data.protein_target_g:
-        flags.append(f"Protein: {data.protein_g:.0f}g vs {data.protein_target_g:.0f}g target. Muscle protein synthesis suboptimal for recovery.")
-
-    # Carbs pre-training
-    # Source: Match Day Protocol §3 — MD-1 needs 6-8g/kg carbs
-    if data.match_day_offset == -1 and data.carbs_g is not None:
-        carb_target = 6.0 * 66  # 6g/kg * bodyweight from config
-        if data.carbs_g < carb_target:
-            flags.append(f"MD-1 carb loading: {data.carbs_g:.0f}g vs {carb_target:.0f}g target. Glycogen stores may not be full for match.")
-
-    # Post-match nutrition reminder
-    # Source: Match Day Protocol §2 — post-match window
-    if data.match_day_offset == 1:
-        flags.append("MD+1 recovery nutrition: Target 2.0-2.4g/kg protein today. Tart cherry juice (480ml) morning + evening. Anti-inflammatory focus.")
-
-    return flags
-
-
 def generate_bloodwork_flags(data: DailyData) -> list:
     """
     Periodic bloodwork context flags. Only generated when bloodwork data exists.
@@ -398,12 +348,6 @@ def select_recovery_protocol(data: DailyData) -> list:
         protocol.append(f"SLEEP: Target 8-9h tonight. Current avg {data.sleep_hours:.1f}h. Sleep is the primary recovery tool — 70-80% of GH released during deep sleep.")
     else:
         protocol.append(f"SLEEP: On target ({data.sleep_hours:.1f}h). Maintain consistency.")
-
-    # Nutrition recovery
-    if data.deficit_detected:
-        protocol.append("NUTRITION: Close caloric deficit today. Focus on carbohydrate replenishment.")
-    if data.protein_g and data.protein_g < data.protein_target_g:
-        protocol.append(f"PROTEIN: Distribute {data.protein_target_g:.0f}g across 4-5 meals today (0.4g/kg each).")
 
     # THE ICING (conditional)
     # Source: Recovery Protocols §3, §6
@@ -513,15 +457,12 @@ def generate_protocol(data: DailyData) -> ProtocolOutput:
     """
     # Flags first — we need the count for interaction effects
     flags = generate_flags(data)
-    nutrition_flags = generate_nutrition_flags(data)
     bloodwork_flags = generate_bloodwork_flags(data)
 
     # --- Lücke 4: INTERACTION EFFECTS ---
     # Count negative signals for compound-risk override
     negative_count = 0
     if data.sleep_hours < 7:
-        negative_count += 1
-    if data.deficit_detected:
         negative_count += 1
     if data.rpe_yesterday and data.rpe_yesterday >= 8:
         negative_count += 1
@@ -574,7 +515,6 @@ def generate_protocol(data: DailyData) -> ProtocolOutput:
         recommendation_reasons=reasons,
         confidence=confidence,
         flags=flags,
-        nutrition_flags=nutrition_flags,
         bloodwork_flags=bloodwork_flags,
         recovery_protocol=recovery,
         match_day_protocol=match_protocol,
@@ -586,6 +526,14 @@ def generate_protocol(data: DailyData) -> ProtocolOutput:
 # ============================================================
 
 if __name__ == "__main__":
+    import sys
+    # cp1252-Konsole (Windows) crasht beim Drucken von ⚠ / 🩸 -> UTF-8 erzwingen.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError):
+            pass
+
     # Sample data matching the dashboard sample
     sample = DailyData(
         adjusted_readiness=67,
@@ -602,12 +550,6 @@ if __name__ == "__main__":
         rhr_baseline=46,
         sleep_hours=8.2,
         sleep_efficiency=95,
-        calories=2140,
-        tdee=2500,
-        protein_g=118,
-        protein_target_g=106,
-        carbs_g=245,
-        deficit_detected=True,
         gps_available=True,
         total_distance_m=8420,
         hsr_m=612,
@@ -634,9 +576,6 @@ if __name__ == "__main__":
     print(f"\nFLAGS:")
     for f in result.flags:
         print(f"  {f}")
-    print(f"\nNUTRITION:")
-    for n in result.nutrition_flags:
-        print(f"  {n}")
     print(f"\nBLOODWORK:")
     for b in result.bloodwork_flags:
         print(f"  {b}")

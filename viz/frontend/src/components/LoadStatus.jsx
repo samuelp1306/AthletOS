@@ -12,9 +12,6 @@ function pickSentence(daily) {
   if (rec === "full_intensity" && zone === "optimal") {
     return "All systems green. Train hard today.";
   }
-  if (rec === "reduced" && daily.deficit_detected) {
-    return "Caloric deficit detected. Keep intensity moderate.";
-  }
   if (rec === "reduced" && /soreness/.test(text)) {
     return "Your body needs lighter work today.";
   }

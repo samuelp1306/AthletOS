@@ -9,17 +9,9 @@ athlete:
   position: "LB / LM"  # left back / left midfielder
   age: 17
 
-# --- Nutrition Targets ---
-nutrition:
-  tdee: 2500                    # Total Daily Energy Expenditure (kcal)
-  protein_target_per_kg: 1.6    # g/kg bodyweight → 106g daily
-  carb_target_pre_training: 3.0 # g/kg on day before intense session → 198g
-  deficit_threshold: 300        # kcal below TDEE to flag deficit
-
 # --- Readiness Corrections ---
 # These are applied to the Whoop Recovery Score (0-100)
 readiness:
-  correction_deficit: -15       # When deficit detected AND whoop > 80
   correction_checkin_no: -20    # When check-in "no" AND whoop > 70
   correction_checkin_limited: -10  # When check-in "limited" AND whoop > 80
   correction_sleep_bonus: 5     # When sleep_efficiency > 90% AND hours > 7.5
@@ -30,7 +22,6 @@ readiness:
   sleep_hours_bad: 6.0
   # Recovery-Gates: Korrektur greift nur wenn recovery_score ueber diesem Wert
   # liegt. Verhindert doppelte Bestrafung bei ohnehin schlechtem Whoop-Score.
-  gate_recovery_deficit: 80
   gate_recovery_checkin_no: 70
   gate_recovery_checkin_limited: 80
   # --- HRV/RHR Combined Signal (Buchheit 2014) ---

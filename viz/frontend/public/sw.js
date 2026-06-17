@@ -26,7 +26,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   // API /api/daily -- network first, fallback Cache
-  if (url.pathname.startsWith("/api/daily") || url.pathname.startsWith("/api/nutrition")) {
+  if (url.pathname.startsWith("/api/daily")) {
     event.respondWith(
       fetch(event.request)
         .then((res) => {

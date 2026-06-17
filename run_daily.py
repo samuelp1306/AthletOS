@@ -5,7 +5,7 @@ Usage: python run_daily.py
 Flow:
     1. Read today's date; fall back to last Whoop day if today has no data
     2. Ask: "How do you feel?" (1=good / 2=okay / 3=bad)
-    3. If 2 or 3, ask reason (soreness/fatigue/mental/deficit/sleep)
+    3. If 2 or 3, ask reason (soreness/fatigue/mental/sleep)
     4. Save check-in to daily_checkin for the analysis date
     5. Run Layer 1: calculate()
     6. Run protocol: generate_protocol() for training recommendation
@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 CHECKIN_NUMERIC: dict[str, int] = {"yes": 90, "limited": 60, "no": 30}
 FEEL_MAP: dict[str, str] = {"1": "yes", "2": "limited", "3": "no"}
-REASONS: list[str] = ["soreness", "fatigue", "mental", "deficit", "sleep"]
+REASONS: list[str] = ["soreness", "fatigue", "mental", "sleep"]
 
 # Hooper 5-Item Wellness-Check. Jedes Item 1-7, ALLE gleiche Richtung: 7 = best/most
 # wellness, 1 = worst. (col-name, prompt label, "1=..." / "7=..." anchors)
@@ -77,20 +77,6 @@ def _fetch_whoop(cfg: dict, target: str) -> tuple[dict, str]:
     raise RuntimeError(
         "No Whoop data in DB. Run: python -m engine.ingest.whoop"
     )
-
-
-def _fetch_yazio(cfg: dict, date: str) -> dict | None:
-    db = _db_path(cfg)
-    try:
-        with sqlite3.connect(db) as conn:
-            conn.row_factory = sqlite3.Row
-            cur = conn.execute(
-                "SELECT * FROM yazio_daily WHERE date = ?", (date,)
-            )
-            row = cur.fetchone()
-            return dict(row) if row else None
-    except sqlite3.OperationalError:
-        return None
 
 
 def _fetch_rpe_yesterday(cfg: dict, date: str) -> float | None:
@@ -187,7 +173,6 @@ def _ask_checkin() -> tuple[str, str]:
 def _build_daily_data(
     layer1: dict,
     whoop: dict,
-    yazio: dict | None,
     readiness: str,
     reason: str,
     cfg: dict,
@@ -208,14 +193,6 @@ def _build_daily_data(
         hrv_base = 1.0
 
     whoop_recovery = float(whoop.get("recovery_score") or 0)
-    weight_kg = float(cfg["athlete"]["weight_kg"])
-
-    def _nut(field: str) -> float | None:
-        return (
-            float(yazio[field])
-            if yazio and yazio.get(field) is not None
-            else None
-        )
 
     return DailyData(
         adjusted_readiness=int(layer1["adjusted_readiness"]),
@@ -232,12 +209,6 @@ def _build_daily_data(
         rhr_baseline=rhr_base,
         sleep_hours=float(whoop.get("sleep_hours") or 0),
         sleep_efficiency=float(whoop.get("sleep_efficiency") or 0),
-        calories=_nut("calories"),
-        tdee=float(cfg["nutrition"]["tdee"]),
-        protein_g=_nut("protein"),
-        protein_target_g=float(cfg["nutrition"]["protein_target_per_kg"]) * weight_kg,
-        carbs_g=_nut("carbs"),
-        deficit_detected=bool(layer1.get("deficit_detected", False)),
         position="FB",           # LB maps to fullback profile
         returning_from_injury=True,  # active ATFL rehab per CLAUDE.md
     )
@@ -312,7 +283,7 @@ def _print_report(
     for reason in proto.recommendation_reasons[:2]:
         print(f"     {_clip(reason)}")
 
-    all_flags = (proto.flags + proto.nutrition_flags)[:3]
+    all_flags = proto.flags[:3]
     if all_flags:
         print()
         for flag in all_flags:
@@ -399,12 +370,10 @@ def main() -> int:
     layer1["checkin"] = readiness
     layer1["checkin_reason"] = reason
 
-    yazio = _fetch_yazio(cfg, whoop_date)
-
     # Protocol (deterministic, Layer 1)
     try:
         daily_data = _build_daily_data(
-            layer1, whoop, yazio, readiness, reason, cfg, whoop_date
+            layer1, whoop, readiness, reason, cfg, whoop_date
         )
         proto = generate_protocol(daily_data)
     except Exception as e:
@@ -449,4 +418,12 @@ def main() -> int:
 
 if __name__ == "__main__":
     import sys
+    # Windows-Konsole ist standardmaessig cp1252 und crasht beim Drucken von
+    # Flag-Symbolen (z. B. ⚠ / 🩸). stdout/stderr auf UTF-8 umstellen, damit
+    # der Report unabhaengig von der Code-Page laeuft.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError):
+            pass
     raise SystemExit(main())

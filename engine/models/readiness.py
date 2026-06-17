@@ -1,7 +1,7 @@
 """Adjusted Readiness Score.
 
 Korrigiert den Whoop Recovery Score um Signale, die Whoop nicht kennt:
-Kalorien-Defizit, subjektives Check-in, Schlafqualitaet, sowie eine
+subjektives Check-in, Schlafqualitaet, sowie eine
 kombinierte HRV/RHR-Signalanalyse nach Buchheit (2014).
 
 Sources:
@@ -25,7 +25,6 @@ Recovery-Gates verhindern Doppelbestrafung bei schon niedrigem Whoop-Score
 
 Input (`day` dict):
     recovery_score:    float 0-100   (whoop_daily.recovery_score)            -- Pflicht
-    deficit_detected:  bool          (aus nutrition.py)                       -- optional
     checkin:           str | None    ("yes" | "limited" | "no")               -- optional
     sleep_efficiency:  float 0-100   (whoop_daily.sleep_efficiency)           -- optional
     sleep_hours:       float         (whoop_daily.sleep_hours)                -- optional
@@ -238,7 +237,6 @@ def compute(day: dict, config: dict) -> dict[str, Any]:
     """Berechnet den Adjusted Readiness Score fuer einen Tag.
 
     Logik (additiv, dann auf 0-100 geklemmt):
-        - deficit_detected AND recovery > gate_deficit         -> +correction_deficit
         - checkin == "no" AND recovery > gate_checkin_no       -> +correction_checkin_no
         - checkin == "limited" AND recovery > gate_limited     -> +correction_checkin_limited
         - eff > eff_good AND hours > hours_good                -> +correction_sleep_bonus
@@ -253,12 +251,6 @@ def compute(day: dict, config: dict) -> dict[str, Any]:
 
     score = recovery
     corrections: list[str] = []
-
-    # --- Defizit ---
-    if day.get("deficit_detected") and recovery > r["gate_recovery_deficit"]:
-        delta = r["correction_deficit"]
-        score += delta
-        corrections.append(f"deficit:{delta:+d}")
 
     # --- Subjektives Check-in ---
     checkin = day.get("checkin")
@@ -308,7 +300,6 @@ if __name__ == "__main__":
     # Basis-Sample (ohne HRV/RHR-Signal, weil db_path+date fehlen):
     sample = {
         "recovery_score": 88,
-        "deficit_detected": True,
         "checkin": "limited",
     }
     result = compute(sample, cfg)
@@ -316,11 +307,10 @@ if __name__ == "__main__":
     print("Input:", sample)
     print("Output:", result)
 
-    expected = 63  # 88 - 15 (deficit) - 10 (checkin_limited)
+    expected = 78  # 88 - 10 (checkin_limited)
     assert result["adjusted_readiness"] == expected, (
         f"adjusted_readiness {result['adjusted_readiness']} != erwartet {expected}"
     )
-    assert "deficit:-15" in result["corrections_applied"]
     assert "checkin_limited:-10" in result["corrections_applied"]
     assert "hrv_rhr_signal" not in result, "Ohne db_path+date kein Signal erwartet"
     print(f"\nOK (Basis): adjusted_readiness = {expected}")

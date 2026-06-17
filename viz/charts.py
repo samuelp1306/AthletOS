@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from engine.models import acwr, nutrition, readiness
+from engine.models import acwr, readiness
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
@@ -59,53 +59,21 @@ def _load_checkin_map(db_path: Path) -> dict[str, dict]:
         return {d: {"readiness": r, "reason": rs} for d, r, rs in cur.fetchall()}
 
 
-def _load_yazio_map(db_path: Path) -> dict[str, dict]:
-    with sqlite3.connect(db_path) as conn:
-        cur = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='yazio_daily'"
-        )
-        if cur.fetchone() is None:
-            return {}
-        cur = conn.execute("SELECT date, calories, protein, carbs FROM yazio_daily")
-        return {
-            d: {"calories": c, "protein": p, "carbs": cb}
-            for d, c, p, cb in cur.fetchall()
-        }
-
-
 def _compute_adjusted_readiness(
     whoop_df: pd.DataFrame, config: dict, db_path: Path
 ) -> pd.Series:
     """Pro Zeile von whoop_df den adjusted_readiness berechnen."""
     checkin_map = _load_checkin_map(db_path)
-    yazio_map = _load_yazio_map(db_path)
-
-    weight_kg = float(config["athlete"]["weight_kg"])
-    protein_target_g = float(config["nutrition"]["protein_target_per_kg"]) * weight_kg
-    tdee = float(config["nutrition"]["tdee"])
 
     out: list[int | None] = []
     for _, row in whoop_df.iterrows():
         date_str = row["date"].strftime("%Y-%m-%d")
-        yazio = yazio_map.get(date_str)
         checkin = checkin_map.get(date_str)
-
-        nut = nutrition.compute(
-            {
-                "calories": yazio.get("calories") if yazio else None,
-                "protein": yazio.get("protein") if yazio else None,
-                "carbs": yazio.get("carbs") if yazio else None,
-                "tdee": tdee,
-                "protein_target_g": protein_target_g,
-            },
-            config,
-        )
 
         try:
             r = readiness.compute(
                 {
                     "recovery_score": row["recovery_score"],
-                    "deficit_detected": nut["deficit_detected"],
                     "checkin": checkin["readiness"] if checkin else None,
                     "sleep_efficiency": row["sleep_efficiency"],
                     "sleep_hours": row["sleep_hours"],
