@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from datetime import date as date_cls, timedelta
+from datetime import date as date_cls, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 
 from engine.calculate import calculate, load_config
 from engine.ingest.checkin import upsert as save_checkin
+from engine.ingest.validation import upsert_hooper, upsert_perceived, upsert_scores
 from engine.models.protocol import DailyData, ProtocolOutput, generate_protocol
 from engine.models.readiness import compute_baseline
 
@@ -32,6 +33,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 CHECKIN_NUMERIC: dict[str, int] = {"yes": 90, "limited": 60, "no": 30}
 FEEL_MAP: dict[str, str] = {"1": "yes", "2": "limited", "3": "no"}
 REASONS: list[str] = ["soreness", "fatigue", "mental", "deficit", "sleep"]
+
+# Hooper 5-Item Wellness-Check. Jedes Item 1-7, ALLE gleiche Richtung: 7 = best/most
+# wellness, 1 = worst. (col-name, prompt label, "1=..." / "7=..." anchors)
+HOOPER_ITEMS: list[tuple[str, str, str]] = [
+    ("hooper_sleep", "Sleep", "1=terrible  7=slept great"),
+    ("hooper_fatigue", "Fatigue", "1=exhausted  7=fully fresh"),
+    ("hooper_soreness", "Soreness", "1=very sore  7=no soreness"),
+    ("hooper_stress", "Stress", "1=very stressed  7=relaxed"),
+    ("hooper_mood", "Mood", "1=awful  7=great mood"),
+]
+
 W = 58  # output column width
 
 
@@ -112,6 +124,42 @@ def _compute_baselines(cfg: dict, date: str) -> tuple[float | None, float | None
 
 
 # ── Interactive check-in ──────────────────────────────────────
+
+def _ask_int(prompt: str, lo: int, hi: int) -> int:
+    """Fragt bis eine Ganzzahl in [lo, hi] kommt. Loop-validated wie _ask_checkin."""
+    while True:
+        ans = input(prompt).strip()
+        try:
+            val = int(ans)
+        except ValueError:
+            print(f"  Please enter a whole number {lo}-{hi}.")
+            continue
+        if lo <= val <= hi:
+            return val
+        print(f"  Please enter a number {lo}-{hi}.")
+
+
+def _ask_perceived() -> int:
+    """BLIND gut-feel readiness 1-10 (10 = fully ready, 1 = not at all).
+
+    Asked FIRST, before any Whoop/adjusted score is shown, so it cannot anchor.
+    Logged to daily_validation only -- never fed into calculate()/compute()."""
+    print()
+    return _ask_int("  Gut feeling -- how ready are you? (1-10): ", 1, 10)
+
+
+def _ask_hooper() -> dict[str, int]:
+    """Hooper 5-item wellness check. Each item 1-7, 7 = best / 1 = worst.
+
+    Returns {hooper_sleep, hooper_fatigue, hooper_soreness, hooper_stress, hooper_mood}.
+    Asked AFTER the blind 1-10. Logged + displayed only -- never enters the engine."""
+    print()
+    print("  Wellness check (1-7, 7 = best):")
+    answers: dict[str, int] = {}
+    for col, label, anchors in HOOPER_ITEMS:
+        answers[col] = _ask_int(f"  {label}? ({anchors}): ", 1, 7)
+    return answers
+
 
 def _ask_checkin() -> tuple[str, str]:
     """Two questions max. Returns (readiness, reason)."""
@@ -216,6 +264,8 @@ def _print_report(
     layer1: dict,
     proto: ProtocolOutput,
     ai_report: str | None,
+    wellness_score: int,
+    hooper_total: int,
 ) -> None:
     bar = "=" * W
     thin = "-" * W
@@ -253,6 +303,7 @@ def _print_report(
     print(bar)
 
     print(f"  Readiness  {raw:.0f} -> {adj} {arrow}   [{corr}]")
+    print(f"  Wellness   {wellness_score}  (hooper {hooper_total}/35)")
     print(f"  ACWR       {acwr_str} / {acwr_zone}   Sleep: {sleep_str}")
     print(f"  Check-in   {ci_str}")
     print()
@@ -296,9 +347,37 @@ def main() -> int:
         print(str(e))
         return 1
 
+    # Validation signals -- captured FIRST, blind, before any score is printed.
+    # Held in locals + written ONLY to daily_validation; never reach calculate().
+    db_path = _db_path(cfg)
+    try:
+        # a. BLIND 1-10 -- strictly before Hooper so Hooper cannot anchor it.
+        perceived = _ask_perceived()
+        upsert_perceived(whoop_date, perceived, datetime.now().isoformat(), db_path)
+
+        # b. Hooper 5-item wellness check (after the 1-10).
+        hooper = _ask_hooper()
+        hooper_total = sum(hooper.values())
+        wellness_score = round((hooper_total - 5) / 30 * 100)
+        upsert_hooper(
+            whoop_date,
+            hooper["hooper_sleep"],
+            hooper["hooper_fatigue"],
+            hooper["hooper_soreness"],
+            hooper["hooper_stress"],
+            hooper["hooper_mood"],
+            hooper_total,
+            wellness_score,
+            db_path,
+        )
+    except (KeyboardInterrupt, EOFError):
+        print("\nAborted.")
+        return 0
+
     if whoop_date != today:
         print(f"  Note: No Whoop data for {today}. Using {whoop_date}.")
 
+    # c. Existing check-in (yes/limited/no) -- unchanged.
     try:
         readiness, reason = _ask_checkin()
     except (KeyboardInterrupt, EOFError):
@@ -353,7 +432,18 @@ def main() -> int:
     else:
         print("  (ANTHROPIC_API_KEY not set -- AI report skipped)")
 
-    _print_report(today, whoop_date, whoop, layer1, proto, ai_report)
+    # Mirror Layer 1's output into daily_validation (write-only; no feedback into engine).
+    upsert_scores(
+        whoop_date,
+        whoop.get("recovery_score"),
+        int(layer1["adjusted_readiness"]),
+        db_path,
+    )
+
+    _print_report(
+        today, whoop_date, whoop, layer1, proto, ai_report,
+        wellness_score, hooper_total,
+    )
     return 0
 
 
