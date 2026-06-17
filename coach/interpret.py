@@ -85,12 +85,10 @@ if __name__ == "__main__":
     sample = {
         "date": "2026-05-04",
         "whoop_recovery": 88,
-        "adjusted_readiness": 63,
-        "corrections_applied": ["deficit:-15", "checkin_limited:-10"],
+        "adjusted_readiness": 78,
+        "corrections_applied": ["checkin_limited:-10"],
         "acwr": 1.05,
         "acwr_zone": "optimal",
-        "deficit_detected": True,
-        "protein_ok": False,
         "checkin": "limited",
         "checkin_reason": "fatigue",
     }

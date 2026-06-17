@@ -5,17 +5,15 @@ strukturierte Dict, das Layer 2 (Coach / Claude) als Input erhaelt.
 
 Quellen:
     whoop_daily        -- Whoop-Werte (Pflicht; ohne diese Zeile bricht der Lauf ab)
-    yazio_daily        -- Ernaehrung; fehlend -> deficit_detected=False, weiter
     daily_checkin      -- Subjektives Check-in; fehlend -> checkin=None, weiter
 
 Aufrufe:
     acwr.compute()        ueber den gesamten Verlauf, dann Zeile fuer date picken
-    nutrition.compute()   pure function, dict in/out
     readiness.compute()   pure function, dict in/out
 
 Output (exakt die Felder aus der Aufgabe):
     date, whoop_recovery, adjusted_readiness, corrections_applied,
-    acwr, acwr_zone, deficit_detected, protein_ok, checkin, checkin_reason
+    acwr, acwr_zone, checkin, checkin_reason
 """
 
 from __future__ import annotations
@@ -27,7 +25,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from engine.models import acwr, nutrition, readiness
+from engine.models import acwr, readiness
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
@@ -67,7 +65,6 @@ def calculate(date: str, config: dict | None = None) -> dict[str, Any]:
 
     with sqlite3.connect(db_path) as conn:
         whoop = _fetch_row(conn, "whoop_daily", date)
-        yazio = _fetch_row(conn, "yazio_daily", date)
         checkin = _fetch_row(conn, "daily_checkin", date)
 
     if whoop is None:
@@ -76,24 +73,11 @@ def calculate(date: str, config: dict | None = None) -> dict[str, Any]:
             "Cannot compute readiness without Whoop recovery."
         )
 
-    # --- Nutrition (Yazio fehlt -> deficit_detected=False, protein_ok=False) ---
-    weight_kg = float(cfg["athlete"]["weight_kg"])
-    protein_target_g = float(cfg["nutrition"]["protein_target_per_kg"]) * weight_kg
-    nutrition_day = {
-        "calories": yazio.get("calories") if yazio else None,
-        "protein": yazio.get("protein") if yazio else None,
-        "carbs": yazio.get("carbs") if yazio else None,
-        "tdee": cfg["nutrition"]["tdee"],
-        "protein_target_g": protein_target_g,
-    }
-    nut = nutrition.compute(nutrition_day, cfg)
-
     # --- Readiness ---
     # hrv/rhr/db_path/date werden mitgegeben, damit readiness.compute()
     # die Buchheit-2014 HRV+RHR-Baseline aus whoop_daily ziehen kann.
     readiness_day = {
         "recovery_score": whoop.get("recovery_score"),
-        "deficit_detected": nut["deficit_detected"],
         "checkin": checkin.get("readiness") if checkin else None,
         "sleep_efficiency": whoop.get("sleep_efficiency"),
         "sleep_hours": whoop.get("sleep_hours"),
@@ -123,8 +107,6 @@ def calculate(date: str, config: dict | None = None) -> dict[str, Any]:
         "corrections_applied": rd["corrections_applied"],
         "acwr": acwr_value,
         "acwr_zone": acwr_zone,
-        "deficit_detected": nut["deficit_detected"],
-        "protein_ok": nut["protein_ok"],
         "checkin": checkin.get("readiness") if checkin else None,
         "checkin_reason": checkin.get("reason") if checkin else None,
     }
