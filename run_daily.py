@@ -75,7 +75,8 @@ def _fetch_whoop(cfg: dict, target: str) -> tuple[dict, str]:
     except sqlite3.OperationalError:
         pass
     raise RuntimeError(
-        "No Whoop data in DB. Run: python -m engine.ingest.whoop"
+        "No Whoop data in DB. Run: python -m engine.ingest.whoop_api "
+        "(or python -m engine.ingest.whoop for a CSV export)"
     )
 
 

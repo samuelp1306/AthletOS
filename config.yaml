@@ -87,6 +87,11 @@ ingest:
     # Sie kommen aus Nap-Only-Tagen (Strap-Ladegap o. ae.) und haben keinen
     # validen Nachtschlaf -- auch HRV/Recovery in diesen Zeilen sind unbrauchbar.
     min_sleep_minutes: 180
+  # Direkter API-Abruf (engine/ingest/whoop_api.py). Zugangsdaten in .env.
+  whoop_api:
+    lookback_days: 30           # Standard-Abrufzeitraum pro Lauf
+    chunk_days: 30              # max. Tage pro Request (API-Limit wie Web-App)
+    token_file: "data/raw/.whoop_api_token.json"  # gitignored Token-Cache
 
 # --- Paths ---
 paths:
