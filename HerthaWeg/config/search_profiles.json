@@ -1,0 +1,61 @@
+{
+  "_comment": "Role/position scoring profiles. Each profile lists the FM attributes that matter for a role and how heavily each one is weighted. These are placeholder examples — tune the weights (and add more profiles) once the scoring logic is built. Weights are relative, not required to sum to any particular number.",
+
+  "profiles": {
+    "attacking_full_back_left": {
+      "label": "Attacking Full Back (Left)",
+      "positions": ["DL", "WBL"],
+      "weights": {
+        "Acceleration": 3,
+        "Pace": 3,
+        "Stamina": 2,
+        "Crossing": 2,
+        "Dribbling": 2,
+        "Work Rate": 2,
+        "Tackling": 1,
+        "Positioning": 1
+      }
+    },
+
+    "ball_playing_defender": {
+      "label": "Ball Playing Defender",
+      "positions": ["DC"],
+      "weights": {
+        "Passing": 3,
+        "Composure": 2,
+        "Tackling": 2,
+        "Marking": 2,
+        "Heading": 2,
+        "Strength": 1,
+        "Vision": 1
+      }
+    },
+
+    "deep_lying_playmaker": {
+      "label": "Deep Lying Playmaker",
+      "positions": ["DM", "MC"],
+      "weights": {
+        "Passing": 3,
+        "Vision": 3,
+        "Technique": 2,
+        "Composure": 2,
+        "Decisions": 2,
+        "Teamwork": 1
+      }
+    },
+
+    "advanced_forward": {
+      "label": "Advanced Forward",
+      "positions": ["ST"],
+      "weights": {
+        "Finishing": 3,
+        "Acceleration": 3,
+        "Pace": 2,
+        "Composure": 2,
+        "Dribbling": 2,
+        "Off the Ball": 2,
+        "First Touch": 1
+      }
+    }
+  }
+}
